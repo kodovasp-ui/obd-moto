@@ -126,6 +126,11 @@ export class SimTransport {
       const v = [...VIN].map((ch) => ch.charCodeAt(0));
       return `014\r0: 49 02 01 ${bytes(...v.slice(0, 3))}\r1: ${bytes(...v.slice(3, 10))}\r2: ${bytes(...v.slice(10, 17))}`;
     }
+    if (c === '0904') {
+      const v = [...'SIMCALID00000001'].map((ch) => ch.charCodeAt(0));
+      return `013\r0: 49 04 01 ${bytes(...v.slice(0, 3))}\r1: ${bytes(...v.slice(3, 10))}\r2: ${bytes(...v.slice(10, 16))}`;
+    }
+    if (c === '0906') return '49 06 01 12 34 56 78';
     if (mode === '09') return 'NO DATA';
     if (mode === '06') return 'NO DATA';
     if (c === '1001') return '50 01 00 32 01 F4';
@@ -134,6 +139,11 @@ export class SimTransport {
       if (did === 'F190') {
         const v = [...VIN].map((ch) => ch.charCodeAt(0));
         return `014\r0: 62 F1 90 ${bytes(...v.slice(0, 3))}\r1: ${bytes(...v.slice(3, 10))}\r2: ${bytes(...v.slice(10, 17))}`;
+      }
+      const SIM_DIDS = { F188: 'MSE6.0', F18A: 'UAES', F189: 'ECM', F194: 'SIMSW0001', F195: 'SW:0.0.0' };
+      if (SIM_DIDS[did]) {
+        const v = [...SIM_DIDS[did]].map((ch) => ch.charCodeAt(0));
+        return bytes(0x62, parseInt(did.slice(0, 2), 16), parseInt(did.slice(2), 16), ...v);
       }
       return '7F 22 31';
     }

@@ -7,7 +7,7 @@ const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/version.js', 'js/app.js', 'js/elm.js', 'js/pids.js', 'js/safety.js',
   'js/transport-ble.js', 'js/transport-sim.js', 'js/chart.js', 'js/session.js', 'js/db.js',
-  'js/health.js', 'js/dtc-kb.js', 'js/assistant.js',
+  'js/health.js', 'js/dtc-kb.js', 'js/assistant.js', 'js/ecu-db.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
 ];
 
