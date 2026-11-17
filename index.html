@@ -34,31 +34,103 @@
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="live" aria-selected="true">Live</button>
     <button role="tab" data-tab="dtc">Κωδικοί</button>
+    <button role="tab" data-tab="health">Υγεία</button>
+    <button role="tab" data-tab="history">Ιστορικό</button>
+    <button role="tab" data-tab="ai">Βοηθός</button>
     <button role="tab" data-tab="info">Όχημα</button>
     <button role="tab" data-tab="console">Κονσόλα</button>
   </nav>
 
   <main>
+    <!-- LIVE -->
     <section id="tab-live" class="tab">
       <div class="toolbar">
         <button id="btn-live" disabled>Έναρξη</button>
-        <span class="muted" id="live-rate"></span>
+        <button id="btn-rec" disabled aria-pressed="false">● Καταγραφή</button>
+        <button id="btn-export" class="ghost" disabled>Εξαγωγή CSV</button>
+        <span class="muted small" id="live-rate"></span>
       </div>
-      <div class="tiles" id="tiles"><p class="empty">Σύνδεσου (ή πάτα Demo) για live τιμές.</p></div>
+      <div id="replay-bar" class="card replay" hidden>
+        <button id="rp-play">▶</button>
+        <input type="range" id="rp-pos" min="0" max="100" step="0.1" value="0" aria-label="Θέση αναπαραγωγής">
+        <span id="rp-time" class="mono small">0 s</span>
+        <select id="rp-speed" aria-label="Ταχύτητα">
+          <option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option>
+        </select>
+        <button id="rp-exit" class="ghost">Έξοδος</button>
+        <span id="rp-title" class="muted small"></span>
+      </div>
+      <p class="muted small">Πάτα σε μια κάρτα για να εμφανιστεί/κρυφτεί το γράφημά της.</p>
+      <div class="tiles" id="tiles"><p class="empty">Σύνδεσου, πάτα Demo ή άνοιξε μια συνεδρία από το Ιστορικό.</p></div>
+      <div class="charts" id="charts"></div>
     </section>
 
+    <!-- ΚΩΔΙΚΟΙ -->
     <section id="tab-dtc" class="tab" hidden>
       <div class="toolbar">
         <button id="btn-dtc" disabled>Ανάγνωση κωδικών</button>
         <button id="btn-clear" class="danger" disabled>Σβήσιμο κωδικών…</button>
       </div>
       <div id="dtc-out"><p class="empty">Δεν έχουν διαβαστεί κωδικοί.</p></div>
+      <div class="card">
+        <h2>Βάση γνώσης κωδικών</h2>
+        <form id="kb-form" class="toolbar">
+          <input id="kb-in" placeholder="π.χ. P0171" autocomplete="off" spellcheck="false" list="kb-list">
+          <datalist id="kb-list"></datalist>
+          <button>Αναζήτηση</button>
+        </form>
+        <div id="kb-out"></div>
+      </div>
     </section>
 
+    <!-- ΥΓΕΙΑ -->
+    <section id="tab-health" class="tab" hidden>
+      <div class="toolbar">
+        <button id="btn-report">Αναφορά από την τρέχουσα καταγραφή</button>
+        <span class="muted small" id="report-src"></span>
+      </div>
+      <p class="muted small">Για πλήρη αναφορά: ζεστός κινητήρας, ~30 s ρελαντί και ~30 s στις 2500 rpm, και ανάγνωση κωδικών πριν.</p>
+      <div id="report-out"></div>
+      <div id="compare-out"></div>
+    </section>
+
+    <!-- ΙΣΤΟΡΙΚΟ -->
+    <section id="tab-history" class="tab" hidden>
+      <div class="toolbar">
+        <label class="filebtn">Εισαγωγή CSV<input type="file" id="csv-in" accept=".csv,text/csv" hidden></label>
+        <span class="muted small">Αποθηκεύεται μόνο σε αυτή τη συσκευή (IndexedDB).</span>
+      </div>
+      <div id="hist-out"><p class="empty">Καμία αποθηκευμένη συνεδρία.</p></div>
+    </section>
+
+    <!-- ΒΟΗΘΟΣ -->
+    <section id="tab-ai" class="tab" hidden>
+      <div class="card">
+        <h2>Βοηθός διάγνωσης (Claude)</h2>
+        <p class="muted small">Προαιρετικό. Όταν πατήσεις «Ανάλυση», οι κωδικοί, η αναφορά υγείας, στατιστικά της καταγραφής
+          και τα συμπτώματα στέλνονται στο api.anthropic.com. Το κλειδί αποθηκεύεται μόνο σε αυτόν τον browser.</p>
+        <div class="toolbar">
+          <input id="ai-key" type="password" placeholder="Κλειδί Anthropic API (sk-ant-…)" autocomplete="off">
+          <label class="small"><input type="checkbox" id="ai-remember"> Να το θυμάται</label>
+          <button id="ai-forget" class="ghost">Διαγραφή κλειδιού</button>
+        </div>
+        <textarea id="ai-symptoms" rows="3" placeholder="Συμπτώματα: π.χ. «σβήνει στο ρελαντί όταν είναι ζεστή», «κόβει στις 5000»"></textarea>
+        <div class="toolbar">
+          <button id="ai-run" class="primary">Ανάλυση</button>
+          <button id="ai-stop" class="ghost" hidden>Ακύρωση</button>
+          <button id="ai-preview" class="ghost">Τι θα σταλεί;</button>
+        </div>
+      </div>
+      <pre id="ai-context" class="log" hidden></pre>
+      <div id="ai-out" class="card answer" hidden></div>
+    </section>
+
+    <!-- ΟΧΗΜΑ -->
     <section id="tab-info" class="tab" hidden>
       <dl class="kv" id="info-out"><p class="empty">Σύνδεσου για στοιχεία οχήματος.</p></dl>
     </section>
 
+    <!-- ΚΟΝΣΟΛΑ -->
     <section id="tab-console" class="tab" hidden>
       <form id="console-form" class="toolbar">
         <input id="console-in" placeholder="π.χ. ATRV, 010C, 22F190" autocomplete="off" spellcheck="false" disabled>
