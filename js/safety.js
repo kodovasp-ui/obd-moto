@@ -13,6 +13,7 @@ export const AT_PATTERNS = [
   'ST[0-9A-F]{2}', 'SP[0-9A-C]', 'SPA[0-9A-C]', 'TP[0-9A-C]',
   'CAF[01]', 'CFC[01]', 'SH[0-9A-F]{3}', 'SH[0-9A-F]{6}',
   'CRA[0-9A-F]{3}', 'CRA', 'FCSH[0-9A-F]{3}', 'FCSD[0-9A-F]{2,10}', 'FCSM[012]',
+  'CF[0-9A-F]{3}', 'CM[0-9A-F]{3}',
 ];
 // --- SAFETY-RULES-END
 
