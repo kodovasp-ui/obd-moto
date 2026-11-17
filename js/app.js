@@ -34,6 +34,7 @@ const S = {
   charts: new Map(),
   chartKeys: store.get('obd.charts', ['0C', '05', '06', '07', '14', 'RV']),
   aiAbort: null,
+  chatLive: { on: false, busy: false, timer: null, abort: null, msgs: [] },
 };
 
 // ------------------------------------------------------------------ log / banner / status
@@ -562,6 +563,102 @@ async function runAi() {
   }
 }
 
+// ------------------------------------------------------------------ ζωντανή συνομιλία (live)
+function liveSystem() {
+  const diag = S.diag || {};
+  const base = AI.buildBaseline({
+    info: S.elm?.info, vin: S.vin,
+    dtcs: diag.dtcs, status: diag.status, freeze: diag.freeze,
+    report: S.report || (S.cur?.rows?.length ? buildReport(S.cur) : null),
+  });
+  return AI.SYSTEM_LIVE + '\n\n# Βάση συνεδρίας\n' + base;
+}
+
+function chatMsg(role, text) {
+  const box = $('live-ai-log');
+  box.hidden = false;
+  const d = el('div', 'msg ' + (role === 'user' ? 'me' : 'ai'), text);
+  box.append(d);
+  box.scrollTop = box.scrollHeight;
+  return d;
+}
+
+function setLiveAiBusy(b) {
+  S.chatLive.busy = b;
+  $('live-ai-send').disabled = b || !S.chatLive.on;
+  $('live-ai-in').disabled = b || !S.chatLive.on;
+  const sec = +$('live-ai-interval').value;
+  $('live-ai-status').textContent = b ? 'ανάλυση…' : (sec ? `αυτόματος έλεγχος κάθε ${sec}s` : 'χειροκίνητα');
+}
+
+function setLiveAiInterval() {
+  if (S.chatLive.timer) { clearInterval(S.chatLive.timer); S.chatLive.timer = null; }
+  const sec = +$('live-ai-interval').value;
+  if (!S.chatLive.busy) $('live-ai-status').textContent = sec ? `αυτόματος έλεγχος κάθε ${sec}s` : 'χειροκίνητα';
+  if (sec && S.chatLive.on) S.chatLive.timer = setInterval(() => { if (!S.chatLive.busy) liveAiSend('', true); }, sec * 1000);
+}
+
+async function liveAiSend(userText, auto = false) {
+  if (!S.chatLive.on || S.chatLive.busy) return;
+  const key = AI.getKey() || $('ai-key').value.trim();
+  if (!key) return banner('Βάλε κλειδί Anthropic API στον Βοηθό.', true);
+  const rows = S.cur?.rows || [];
+  if (!rows.length) { if (!auto) banner('Δεν υπάρχουν live τιμές ακόμα — πάτα Έναρξη στο Live.', true); return; }
+
+  const content = (auto ? '[auto] Στιγμιότυπο — σχολίασε σύντομα αν κάτι δεν πάει καλά:\n' : '')
+    + AI.buildLiveSnapshot(rows) + (userText ? `\n\nΕρώτηση αναβάτη: ${userText}` : '');
+  chatMsg('user', auto ? `⟳ αυτόματος έλεγχος @${rows[rows.length - 1].t.toFixed(0)}s` : userText);
+
+  S.chatLive.msgs.push({ role: 'user', content });
+  if (S.chatLive.msgs.length > 16) S.chatLive.msgs.splice(0, S.chatLive.msgs.length - 16);
+  if (S.chatLive.msgs[0]?.role === 'assistant') S.chatLive.msgs.shift();
+
+  setLiveAiBusy(true);
+  const aiDiv = chatMsg('ai', '');
+  let acc = '';
+  S.chatLive.abort = new AbortController();
+  try {
+    const { text } = await AI.chat({
+      apiKey: key, system: liveSystem(), messages: S.chatLive.msgs, signal: S.chatLive.abort.signal,
+      onText: (t) => { acc += t; aiDiv.textContent = acc; $('live-ai-log').scrollTop = $('live-ai-log').scrollHeight; },
+    });
+    S.chatLive.msgs.push({ role: 'assistant', content: text || acc || '(κενή απάντηση)' });
+  } catch (e) {
+    aiDiv.classList.add('err');
+    aiDiv.textContent = (acc ? acc + '\n' : '') + '⚠ ' + e.message;
+    S.chatLive.msgs.pop(); // πέτα το user turn που απέτυχε, να μείνει έγκυρο το ιστορικό
+  } finally {
+    S.chatLive.abort = null;
+    if (S.chatLive.on) setLiveAiBusy(false);
+  }
+}
+
+function startLiveAi() {
+  const key = AI.getKey() || $('ai-key').value.trim();
+  if (!key) return banner('Βάλε κλειδί Anthropic API στον Βοηθό.', true);
+  if (!S.elm) return banner('Σύνδεσε τη μοτοσυκλέτα ή πάτα Demo πρώτα.', true);
+  AI.setKey(key, $('ai-remember').checked);
+  S.chatLive.on = true;
+  S.chatLive.msgs = [];
+  $('live-ai-toggle').textContent = '■ Διακοπή ζωντανής ανάλυσης';
+  $('live-ai-toggle').classList.remove('primary');
+  $('live-ai-in').disabled = false; $('live-ai-send').disabled = false;
+  if (!S.live) toggleLive();
+  chatMsg('ai', 'Ζωντανή σύνδεση ενεργή. Ρώτα ό,τι θες ή περίμενε τον αυτόματο έλεγχο.');
+  setLiveAiInterval();
+  setTimeout(() => liveAiSend('', true), 3000); // άσε να μαζευτούν δείγματα
+}
+
+function stopLiveAi() {
+  S.chatLive.on = false;
+  S.chatLive.abort?.abort();
+  if (S.chatLive.timer) { clearInterval(S.chatLive.timer); S.chatLive.timer = null; }
+  $('live-ai-toggle').textContent = '▶ Έναρξη ζωντανής ανάλυσης';
+  $('live-ai-toggle').classList.add('primary');
+  $('live-ai-in').disabled = true; $('live-ai-send').disabled = true;
+  $('live-ai-status').textContent = '';
+}
+
 // ------------------------------------------------------------------ ECU ID
 const asText = (b) => {
   if (!b) return null;
@@ -733,6 +830,9 @@ function init() {
   $('ai-run').onclick = runAi;
   $('ai-stop').onclick = () => S.aiAbort?.abort();
   $('ai-preview').onclick = () => { const p = $('ai-context'); p.hidden = !p.hidden; p.textContent = aiContext(); };
+  $('live-ai-toggle').onclick = () => (S.chatLive.on ? stopLiveAi() : startLiveAi());
+  $('live-ai-interval').onchange = setLiveAiInterval;
+  $('live-ai-form').onsubmit = (e) => { e.preventDefault(); const t = $('live-ai-in').value.trim(); if (t) { $('live-ai-in').value = ''; liveAiSend(t, false); } };
   if (!BleTransport.isSupported()) {
     banner(window.isSecureContext
       ? 'Αυτός ο browser δεν υποστηρίζει Web Bluetooth. Χρησιμοποίησε Chrome ή Edge. Το Demo λειτουργεί.'
