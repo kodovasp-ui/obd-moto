@@ -124,6 +124,29 @@
       </div>
       <pre id="ai-context" class="log" hidden></pre>
       <div id="ai-out" class="card answer" hidden></div>
+
+      <div class="card">
+        <h2>Ζωντανή σύνδεση (live)</h2>
+        <p class="muted small">Με ανοιχτή τη σύνδεση (ή Demo), στέλνει περιοδικά τις τρέχουσες τιμές στο Claude και μπορείς να ρωτάς ζωντανά.
+          Χρεώνεται ανά μήνυμα. Μόνο ανάγνωση. Για πλήρη εικόνα διάβασε πρώτα κωδικούς και αναφορά υγείας.</p>
+        <div class="toolbar">
+          <button id="live-ai-toggle" class="primary">▶ Έναρξη ζωντανής ανάλυσης</button>
+          <label class="small">Αυτόματος έλεγχος:
+            <select id="live-ai-interval" aria-label="Συχνότητα αυτόματου ελέγχου">
+              <option value="0">χειροκίνητα</option>
+              <option value="15">κάθε 15 s</option>
+              <option value="30" selected>κάθε 30 s</option>
+              <option value="60">κάθε 60 s</option>
+            </select>
+          </label>
+          <span class="muted small" id="live-ai-status"></span>
+        </div>
+        <div id="live-ai-log" class="chat" hidden></div>
+        <form id="live-ai-form" class="toolbar">
+          <input id="live-ai-in" placeholder="Ρώτησέ με… π.χ. «πέφτει το ρελαντί όταν ζεσταθεί, τι να κοιτάξω;»" autocomplete="off" disabled>
+          <button id="live-ai-send" disabled>Αποστολή</button>
+        </form>
+      </div>
     </section>
 
     <!-- ECU -->

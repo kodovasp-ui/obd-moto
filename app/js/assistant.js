@@ -24,6 +24,33 @@ const SYSTEM = `Είσαι έμπειρος μηχανικός μοτοσυκλ�
 - Οι τιμές αναφοράς (αντιστάσεις, πιέσεις, ρελαντί) είναι γενικές· πες να επιβεβαιωθούν με το εγχειρίδιο σέρβις του 450MT.
 - Για θέματα ασφάλειας (φρένα, καύσιμο, υπερθέρμανση) πες καθαρά αν δεν πρέπει να οδηγηθεί η μοτοσυκλέτα.`;
 
+const SYSTEM_LIVE_TEXT = `Είσαι έμπειρος μηχανικός μοτοσυκλετών σε ΖΩΝΤΑΝΗ συνεδρία διάγνωσης OBD-II.
+Όχημα: CFMOTO 450MT (2025/2026), βενζίνη, ψεκασμός, narrowband αισθητήρες λάμδα, CAN 11bit/500k.
+Λαμβάνεις περιοδικά στιγμιότυπα τρεχουσών τιμών (τρέχουσα τιμή + min/μέση/max των τελευταίων δευτερολέπτων) και ερωτήσεις από τον αναβάτη.
+Στη βάση (system, πιο κάτω) έχεις — όταν υπάρχουν — κωδικούς βλάβης, readiness και αυτόματη αναφορά υγείας.
+
+Απάντα στα ελληνικά, ΠΟΛΥ σύντομα (είναι ζωντανή συνομιλία, όχι έκθεση):
+- Σε μήνυμα [auto]: 1-3 γραμμές. Αν όλα ομαλά, πες το σε μία γραμμή και ανέφερε την πιο κρίσιμη τιμή. Αν κάτι αποκλίνει, πες τι και πόσο σοβαρό.
+- Σε ερώτηση του αναβάτη: στοχευμένη απάντηση — τι φταίει πιθανότερα, τι να κοιτάξει, ποιες live τιμές να προσέξει και τι να περιμένει.
+
+Κανόνες:
+- Η εφαρμογή κάνει ΜΟΝΟ ανάγνωση. Ποτέ μην προτείνεις προγραμματισμό, reflash, αλλαγές παραμέτρων ECU ή εντολές εγγραφής.
+- Αν λείπει μια μέτρηση για ασφαλές συμπέρασμα, πες ποιο PID/κάρτα να ανοίξει αντί να μαντεύεις.
+- Οι τιμές αναφοράς είναι γενικές — να επιβεβαιώνονται με το εγχειρίδιο σέρβις του 450MT.
+- Για ασφάλεια (φρένα, καύσιμο, υπερθέρμανση) πες καθαρά αν δεν πρέπει να οδηγηθεί.`;
+
+export const SYSTEM_LIVE = SYSTEM_LIVE_TEXT;
+
+function mapErr(e, Anthropic) {
+  if (e instanceof Anthropic.AuthenticationError) return new Error('Μη έγκυρο κλειδί API.');
+  if (e instanceof Anthropic.PermissionDeniedError) return new Error('Το κλειδί δεν έχει πρόσβαση σε αυτό το μοντέλο.');
+  if (e instanceof Anthropic.RateLimitError) return new Error('Όριο αιτημάτων — δοκίμασε σε λίγο.');
+  if (e instanceof Anthropic.APIUserAbortError) return new Error('Ακυρώθηκε.');
+  if (e instanceof Anthropic.APIConnectionError) return new Error('Δεν υπάρχει σύνδεση με το api.anthropic.com.');
+  if (e instanceof Anthropic.APIError) return new Error(`Σφάλμα API ${e.status ?? ''}: ${e.message}`);
+  return e;
+}
+
 export function getKey() {
   try { return localStorage.getItem(KEY_STORE) || sessionStorage.getItem(KEY_STORE) || ''; } catch { return ''; }
 }
@@ -96,12 +123,69 @@ export async function diagnose({ apiKey, context, onText, signal }) {
     if (msg.stop_reason === 'max_tokens') onText('\n\n[Η απάντηση κόπηκε λόγω ορίου μήκους.]');
     return msg;
   } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) throw new Error('Μη έγκυρο κλειδί API.');
-    if (e instanceof Anthropic.PermissionDeniedError) throw new Error('Το κλειδί δεν έχει πρόσβαση σε αυτό το μοντέλο.');
-    if (e instanceof Anthropic.RateLimitError) throw new Error('Όριο αιτημάτων — δοκίμασε σε λίγο.');
-    if (e instanceof Anthropic.APIUserAbortError) throw new Error('Ακυρώθηκε.');
-    if (e instanceof Anthropic.APIConnectionError) throw new Error('Δεν υπάρχει σύνδεση με το api.anthropic.com.');
-    if (e instanceof Anthropic.APIError) throw new Error(`Σφάλμα API ${e.status ?? ''}: ${e.message}`);
-    throw e;
+    throw mapErr(e, Anthropic);
+  }
+}
+
+/** Στατική «βάση» για live mode: όχημα, κωδικοί, freeze, αναφορά υγείας — χωρίς τα live stats. */
+export function buildBaseline({ info, vin, dtcs, status, freeze, report }) {
+  const out = [];
+  out.push(`## Όχημα\nVIN: ${vin || '—'}\nΠρωτόκολλο: ${info?.protocol || '—'}\nAdapter: ${info?.elm || '—'}`);
+  if (status) {
+    out.push(`## Κατάσταση\nMIL: ${status.mil ? 'αναμμένη' : 'σβηστή'}, αποθηκευμένοι: ${status.dtcCount}\nReadiness: ${status.monitors.map((m) => `${m.name}=${m.complete ? 'OK' : 'μη ολοκλ.'}`).join(', ')}`);
+  }
+  if (dtcs) {
+    const fmt = (a) => (a?.length ? a.map((c) => `${c} (${lookup(c).t})`).join('; ') : 'κανένας');
+    out.push(`## Κωδικοί\nΑποθηκευμένοι (03): ${fmt(dtcs.stored)}\nΕκκρεμείς (07): ${fmt(dtcs.pending)}\nΜόνιμοι (0A): ${fmt(dtcs.permanent)}`);
+  }
+  if (freeze?.code) {
+    out.push(`## Freeze frame (αιτία ${freeze.code})\n${freeze.values.map(([p, v]) => `${PIDS[p]?.name || p}: ${v == null ? '—' : v.toFixed(2)} ${PIDS[p]?.unit || ''}`).join('\n')}`);
+  }
+  if (report) {
+    out.push(`## Αυτόματη αναφορά υγείας\n${report.items.map((i) => `[${i.status}] ${i.area}: ${i.title} — ${i.detail}`).join('\n')}`);
+  }
+  return out.join('\n\n');
+}
+
+/** Συμπαγές στιγμιότυπο των τρεχουσών live τιμών + στατιστικά του τελευταίου παραθύρου. */
+export function buildLiveSnapshot(rows, windowSec = 15) {
+  if (!rows || !rows.length) return 'Καμία live τιμή ακόμα.';
+  const last = rows[rows.length - 1];
+  const tEnd = last.t;
+  const win = rows.filter((r) => tEnd - r.t <= windowSec);
+  const keys = [...new Set(win.flatMap((r) => Object.keys(r.v)))];
+  const name = (k) => (k === 'RV' ? 'Τάση ATRV [V]' : `${PIDS[k]?.name || k} [${PIDS[k]?.unit || ''}]`);
+  const lines = keys.map((k) => {
+    const cur = last.v[k];
+    const vs = win.map((r) => r.v[k]).filter((x) => x != null);
+    if (!vs.length) return null;
+    const mean = vs.reduce((s, x) => s + x, 0) / vs.length;
+    return `${name(k)}: τώρα ${cur == null ? '—' : cur.toFixed(2)} (τελ. ${windowSec}s: min ${Math.min(...vs).toFixed(2)} / μ ${mean.toFixed(2)} / max ${Math.max(...vs).toFixed(2)})`;
+  }).filter(Boolean);
+  return `Χρόνος ${tEnd.toFixed(0)} s\n${lines.join('\n') || '—'}`;
+}
+
+/** Συνομιλία με streaming. Επιστρέφει { msg, text }. */
+export async function chat({ apiKey, system, messages, onText, signal }) {
+  const { default: Anthropic } = await import(SDK_URL);
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  try {
+    const stream = client.beta.messages.stream({
+      model: MODEL,
+      max_tokens: 4000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'medium' },
+      system,
+      messages,
+    }, { signal });
+    stream.on('text', (t) => onText(t));
+    const msg = await stream.finalMessage();
+    if (msg.stop_reason === 'refusal') throw new Error('Το μοντέλο αρνήθηκε να απαντήσει.');
+    const text = (msg.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    return { msg, text };
+  } catch (e) {
+    throw mapErr(e, Anthropic);
   }
 }
