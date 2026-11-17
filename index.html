@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OBD Moto</title>
+  <meta name="description" content="Διαγνωστικά OBD-II μέσω ELM327 Bluetooth LE — μόνο ανάγνωση.">
+  <meta name="theme-color" content="#0f1216">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="js/version.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="28" height="28">
+      <div>
+        <h1>OBD Moto</h1>
+        <span class="sub" id="status">Αποσυνδεδεμένο</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btn-install" class="ghost" hidden>Εγκατάσταση</button>
+      <button id="btn-demo" class="ghost">Demo</button>
+      <button id="btn-connect" class="primary">Σύνδεση BLE</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="live" aria-selected="true">Live</button>
+    <button role="tab" data-tab="dtc">Κωδικοί</button>
+    <button role="tab" data-tab="info">Όχημα</button>
+    <button role="tab" data-tab="console">Κονσόλα</button>
+  </nav>
+
+  <main>
+    <section id="tab-live" class="tab">
+      <div class="toolbar">
+        <button id="btn-live" disabled>Έναρξη</button>
+        <span class="muted" id="live-rate"></span>
+      </div>
+      <div class="tiles" id="tiles"><p class="empty">Σύνδεσου (ή πάτα Demo) για live τιμές.</p></div>
+    </section>
+
+    <section id="tab-dtc" class="tab" hidden>
+      <div class="toolbar">
+        <button id="btn-dtc" disabled>Ανάγνωση κωδικών</button>
+        <button id="btn-clear" class="danger" disabled>Σβήσιμο κωδικών…</button>
+      </div>
+      <div id="dtc-out"><p class="empty">Δεν έχουν διαβαστεί κωδικοί.</p></div>
+    </section>
+
+    <section id="tab-info" class="tab" hidden>
+      <dl class="kv" id="info-out"><p class="empty">Σύνδεσου για στοιχεία οχήματος.</p></dl>
+    </section>
+
+    <section id="tab-console" class="tab" hidden>
+      <form id="console-form" class="toolbar">
+        <input id="console-in" placeholder="π.χ. ATRV, 010C, 22F190" autocomplete="off" spellcheck="false" disabled>
+        <button id="console-send" disabled>Αποστολή</button>
+      </form>
+      <p class="muted small">Μόνο εντολές ανάγνωσης (whitelist): OBD 01/02/03/06/07/09/0A, UDS 19/22, επιλεγμένες AT.</p>
+      <pre id="log" class="log"></pre>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Μόνο ανάγνωση · καμία εγγραφή στην ECU</span>
+    <span id="version"></span>
+  </footer>
+
+  <dialog id="confirm-clear">
+    <form method="dialog">
+      <h2>Σβήσιμο κωδικών βλάβης</h2>
+      <p>Θα σβηστούν <b>όλοι</b> οι κωδικοί, τα freeze frame και τα readiness monitors (υπηρεσία 04).
+        Η λυχνία θα σβήσει, αλλά η βλάβη μένει αν δεν διορθώθηκε.</p>
+      <label><input type="checkbox" id="confirm-check"> Καταλαβαίνω και θέλω να τους σβήσω</label>
+      <div class="toolbar end">
+        <button value="cancel">Άκυρο</button>
+        <button value="ok" class="danger" id="confirm-ok" disabled>Σβήσιμο</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
