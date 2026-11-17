@@ -1,0 +1,260 @@
+{
+  "time": "2026-11-17 18:37:52",
+  "broadcast": {
+    "7E8": {
+      "0902": {
+        "hex": "49 02 01 4C 43 45 50 45 53 4C 47 58 54 36 30 30 31 38 30 38",
+        "text": "LCEPESLGXT6001808"
+      },
+      "0904": {
+        "hex": "49 04 01 38 38 31 31 43 46 32 34 35 30 33 42 36 41 51 32",
+        "text": "8811CF24503B6AQ2"
+      },
+      "0906": {
+        "hex": "49 06 01 FB E1 4D DC",
+        "text": null
+      }
+    }
+  },
+  "modules": {
+    "7E0": {
+      "rx": "7E8",
+      "dids": {
+        "F180": {
+          "name": "Boot software ID",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F181": {
+          "name": "Application software ID",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F182": {
+          "name": "Application data ID",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F183": {
+          "name": "Boot software fingerprint",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F184": {
+          "name": "Application software fingerprint",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F185": {
+          "name": "Application data fingerprint",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F186": {
+          "name": "Ενεργό session",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F187": {
+          "name": "Κωδικός ανταλλακτικού (κατασκευαστή)",
+          "text": null,
+          "hex": "43 46 34 35 30 4D 54 00 00 00 00"
+        },
+        "F188": {
+          "name": "ECU software number",
+          "text": "MSE6.0",
+          "hex": "4D 53 45 36 2E 30"
+        },
+        "F189": {
+          "name": "ECU software version",
+          "text": "ECM",
+          "hex": "45 43 4D 20 20 20"
+        },
+        "F18A": {
+          "name": "Προμηθευτής συστήματος",
+          "text": "UAES",
+          "hex": "55 41 45 53 20"
+        },
+        "F18B": {
+          "name": "Ημερομηνία κατασκευής ECU",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F18C": {
+          "name": "Σειριακός αριθμός ECU",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F18E": {
+          "name": "Supported functional units",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F190": {
+          "name": "VIN",
+          "text": "LCEPESLGXT6001808",
+          "hex": "4C 43 45 50 45 53 4C 47 58 54 36 30 30 31 38 30 38"
+        },
+        "F191": {
+          "name": "ECU hardware number",
+          "text": "HW:1.00.00",
+          "hex": "48 57 3A 31 2E 30 30 2E 30 30"
+        },
+        "F192": {
+          "name": "Supplier ECU hardware number",
+          "text": "BOS  0100F01R00D3KD",
+          "hex": "42 4F 53 20 20 30 31 30 30 46 30 31 52 30 30 44 33 4B 44"
+        },
+        "F193": {
+          "name": "Supplier ECU hardware version",
+          "text": "HW:1.00.00",
+          "hex": "48 57 3A 31 2E 30 30 2E 30 30"
+        },
+        "F194": {
+          "name": "Supplier ECU software number",
+          "text": "F05H00015L",
+          "hex": "46 30 35 48 30 30 30 31 35 4C"
+        },
+        "F195": {
+          "name": "Supplier ECU software version",
+          "text": "SW:1.00.00",
+          "hex": "53 57 3A 31 2E 30 30 2E 30 30"
+        },
+        "F196": {
+          "name": "Exhaust regulation / type approval",
+          "text": "20060110",
+          "hex": "32 30 30 36 30 31 31 30"
+        },
+        "F197": {
+          "name": "Όνομα συστήματος / κινητήρα",
+          "text": null,
+          "hex": "30 53 51 42 00 00"
+        },
+        "F198": {
+          "name": "Κωδικός συνεργείου / tester",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F199": {
+          "name": "Ημερομηνία προγραμματισμού",
+          "text": "6AQV-001000-6400",
+          "hex": "36 41 51 56 2D 30 30 31 30 30 30 2D 36 34 30 30 20 20 20 20"
+        },
+        "F19D": {
+          "name": "Ημερομηνία εγκατάστασης ECU",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F19E": {
+          "name": "ODX file",
+          "nrc": "31 requestOutOfRange"
+        }
+      },
+      "session": "50 01"
+    },
+    "7E1": {
+      "rx": "7E9",
+      "dids": {
+        "F180": {
+          "name": "Boot software ID",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F181": {
+          "name": "Application software ID",
+          "text": null,
+          "hex": "10 00"
+        },
+        "F182": {
+          "name": "Application data ID",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F183": {
+          "name": "Boot software fingerprint",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F184": {
+          "name": "Application software fingerprint",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F185": {
+          "name": "Application data fingerprint",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F186": {
+          "name": "Ενεργό session",
+          "text": null,
+          "hex": "01"
+        },
+        "F187": {
+          "name": "Κωδικός ανταλλακτικού (κατασκευαστή)",
+          "text": "6AQV-6000",
+          "hex": "36 41 51 56 2D 36 30 30 30 00 00"
+        },
+        "F188": {
+          "name": "ECU software number",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F189": {
+          "name": "ECU software version",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F18A": {
+          "name": "Προμηθευτής συστήματος",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F18B": {
+          "name": "Ημερομηνία κατασκευής ECU",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F18C": {
+          "name": "Σειριακός αριθμός ECU",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F18E": {
+          "name": "Supported functional units",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F190": {
+          "name": "VIN",
+          "text": null,
+          "hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+        },
+        "F191": {
+          "name": "ECU hardware number",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F192": {
+          "name": "Supplier ECU hardware number",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F193": {
+          "name": "Supplier ECU hardware version",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F194": {
+          "name": "Supplier ECU software number",
+          "text": "88762",
+          "hex": "38 38 37 36 32"
+        },
+        "F195": {
+          "name": "Supplier ECU software version",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F196": {
+          "name": "Exhaust regulation / type approval",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F197": {
+          "name": "Όνομα συστήματος / κινητήρα",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F198": {
+          "name": "Κωδικός συνεργείου / tester",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F199": {
+          "name": "Ημερομηνία προγραμματισμού",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F19D": {
+          "name": "Ημερομηνία εγκατάστασης ECU",
+          "nrc": "31 requestOutOfRange"
+        },
+        "F19E": {
+          "name": "ODX file",
+          "nrc": "31 requestOutOfRange"
+        }
+      },
+      "session": "50 01 00 32 01 F4"
+    }
+  },
+  "voltage": ""
+}
