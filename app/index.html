@@ -37,6 +37,7 @@
     <button role="tab" data-tab="health">Υγεία</button>
     <button role="tab" data-tab="history">Ιστορικό</button>
     <button role="tab" data-tab="ai">Βοηθός</button>
+    <button role="tab" data-tab="ecu">ECU</button>
     <button role="tab" data-tab="info">Όχημα</button>
     <button role="tab" data-tab="console">Κονσόλα</button>
   </nav>
@@ -123,6 +124,15 @@
       </div>
       <pre id="ai-context" class="log" hidden></pre>
       <div id="ai-out" class="card answer" hidden></div>
+    </section>
+
+    <!-- ECU -->
+    <section id="tab-ecu" class="tab" hidden>
+      <div class="toolbar">
+        <button id="btn-ecu" disabled>Ανάγνωση ECU ID</button>
+        <span class="muted small">UDS 0x22 και OBD 09 — μόνο ανάγνωση. Η εφαρμογή δεν γράφει ποτέ στην ECU.</span>
+      </div>
+      <div id="ecu-out"><p class="empty">Σύνδεσου και πάτα «Ανάγνωση ECU ID».</p></div>
     </section>
 
     <!-- ΟΧΗΜΑ -->

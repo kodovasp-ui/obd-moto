@@ -134,6 +134,37 @@ export class Elm {
     return vin ? vin.slice(-17) : null;
   }
 
+  /** Mode 09 πληροφορία (π.χ. '04' CALID, '06' CVN) → bytes μετά το «49 xx NN». */
+  async info09(pid) {
+    for (const r of await this.obd('09' + pid, { timeout: 8000 })) {
+      for (let i = 0; i + 2 < r.length; i++) {
+        if (r[i] === 0x49 && r[i + 1] === parseInt(pid, 16)) return Array.from(r.slice(i + 3));
+      }
+    }
+    return null;
+  }
+
+  /** UDS 0x22 (ReadDataByIdentifier) προς την ECU κινητήρα 7E0 — μόνο ανάγνωση. */
+  async readEcuId(dids) {
+    const out = {};
+    await this.cmd('ATSH7E0');
+    try {
+      for (const did of dids) {
+        const hi = parseInt(did.slice(0, 2), 16);
+        const lo = parseInt(did.slice(2), 16);
+        for (const r of await this.obd('22' + did, { timeout: 4000 })) {
+          const i = r.findIndex((b, k) => b === 0x62 && r[k + 1] === hi && r[k + 2] === lo);
+          if (i >= 0) { out[did] = Array.from(r.slice(i + 3)); break; }
+        }
+      }
+    } finally {
+      await this.cmd('ATSH7DF');
+    }
+    out.CALID = await this.info09('04');
+    out.CVN = await this.info09('06');
+    return out;
+  }
+
   /** Κατάσταση MIL και readiness monitors από PID 0101. */
   async readStatus() {
     const d = await this.pidData('01');

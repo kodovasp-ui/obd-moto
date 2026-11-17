@@ -11,6 +11,7 @@ import { saveSession, getSession, listSessions, deleteSession } from './db.js';
 import { buildReport, compareReports } from './health.js';
 import { lookup, KB_CODES } from './dtc-kb.js';
 import * as AI from './assistant.js';
+import { ECU_DB, REFERENCE, ECU_DIDS } from './ecu-db.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -53,7 +54,7 @@ function setStatus(text, on) {
   $('status').classList.toggle('on', !!on);
 }
 function setConnected(on) {
-  for (const id of ['btn-live', 'btn-dtc', 'btn-clear', 'console-in', 'console-send', 'btn-rec']) $(id).disabled = !on;
+  for (const id of ['btn-live', 'btn-dtc', 'btn-clear', 'console-in', 'console-send', 'btn-rec', 'btn-ecu']) $(id).disabled = !on;
   $('btn-connect').textContent = on ? 'Αποσύνδεση' : 'Σύνδεση BLE';
   $('btn-demo').disabled = on;
 }
@@ -561,6 +562,85 @@ async function runAi() {
   }
 }
 
+// ------------------------------------------------------------------ ECU ID
+const asText = (b) => {
+  if (!b) return null;
+  const core = b.slice(0, b.length - [...b].reverse().findIndex((x) => x !== 0 && x !== 0x20));
+  return core.length && core.every((x) => x >= 32 && x < 127) ? String.fromCharCode(...core).trim() : null;
+};
+const asHex = (b) => (b ? b.map((x) => x.toString(16).toUpperCase().padStart(2, '0')).join(' ') : '—');
+
+async function readEcu() {
+  $('ecu-out').replaceChildren(el('p', 'muted', 'Ανάγνωση…'));
+  const wasLive = S.live;
+  S.live = false;
+  const raw = await S.elm.readEcuId(ECU_DIDS.map(([d]) => d));
+  const id = { at: Date.now(), vin: S.vin, values: {} };
+  for (const [did] of ECU_DIDS) if (raw[did]) id.values[did] = { text: asText(raw[did]), hex: asHex(raw[did]) };
+  id.values.CALID = raw.CALID ? { text: asText(raw.CALID), hex: asHex(raw.CALID) } : null;
+  id.values.CVN = raw.CVN ? { text: null, hex: asHex(raw.CVN).replace(/ /g, '') } : null;
+  store.set('obd.ecuId', id);
+  renderEcu(id);
+  if (wasLive) toggleLive();
+}
+
+function renderEcu(id) {
+  const out = $('ecu-out');
+  out.replaceChildren();
+  if (!id) { out.append(el('p', 'empty', 'Σύνδεσου και πάτα «Ανάγνωση ECU ID».')); return; }
+  const v = id.values;
+  const type = v.F188?.text || null;
+
+  // Ταυτότητα
+  const c = el('div', 'card');
+  c.append(el('h2', '', `ECU: ${type || 'άγνωστος τύπος'}${v.F18A?.text ? ' · ' + v.F18A.text : ''}`),
+    el('p', 'muted small', `Ανάγνωση: ${new Date(id.at).toLocaleString('el-GR')} · VIN ${id.vin || '—'}`));
+  const tbl = el('table');
+  const rows = [...ECU_DIDS.map(([d, n]) => [d, n, v[d]]), ['09 04', 'Calibration ID (CALID)', v.CALID], ['09 06', 'CVN', v.CVN]];
+  for (const [d, n, x] of rows) {
+    if (!x) continue;
+    const tr = el('tr');
+    tr.append(el('td', 'mono small', d), el('td', '', n), el('td', 'mono', x.text || x.hex));
+    tbl.append(tr);
+  }
+  c.append(tbl);
+  out.append(c);
+
+  // Σύγκριση με την εργοστασιακή αναφορά (ένδειξη επέμβασης)
+  if (id.vin && id.vin === REFERENCE.vin) {
+    const cmp = el('div', 'card');
+    const cvn = v.CVN?.hex;
+    const same = cvn === REFERENCE.CVN && v.CALID?.text === REFERENCE.CALID;
+    cmp.append(el('h2', '', 'Σύγκριση με την αναφορά της ' + REFERENCE.date),
+      el('span', `pill ${same ? 'ok' : 'bad'}`, same ? '✓ CALID και CVN ίδια — εργοστασιακή calibration' : '✕ Άλλαξε CALID/CVN — η calibration έχει τροποποιηθεί ή ενημερωθεί'),
+      el('p', 'muted small', `Αναφορά: CALID ${REFERENCE.CALID}, CVN ${REFERENCE.CVN}`));
+    out.append(cmp);
+  }
+
+  // Γνωστά εργαλεία / tunes
+  const kb = ECU_DB[type];
+  const k = el('div', 'card kb');
+  k.append(el('h2', '', 'Γνωστά εργαλεία και tunes'));
+  if (!kb) {
+    k.append(el('p', 'muted', type ? `Δεν υπάρχουν πληροφορίες για «${type}».` : 'Ο τύπος ECU δεν διαβάστηκε.'));
+  } else {
+    k.append(el('p', '', `${kb.name}${kb.mcu ? ` · μικροελεγκτής ${kb.mcu}` : ''}`));
+    const link = (x) => { const a = el('a', '', x.name); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; return a; };
+    k.append(el('h3', '', `Εργαλεία (${kb.tools.length})`));
+    const ul = el('ul');
+    kb.tools.forEach((t) => { const li = el('li'); li.append(link(t), ` — ${t.methods}`); ul.append(li); });
+    k.append(ul);
+    if (kb.tunes.length) {
+      k.append(el('h3', '', `Έτοιμα tunes (${kb.tunes.length})`));
+      const ul2 = el('ul');
+      kb.tunes.forEach((t) => { const li = el('li'); li.append(link(t)); ul2.append(li); });
+      k.append(ul2);
+    }
+    k.append(el('p', 'src', kb.note + ' Πληροφορίες πωλητών (Νοέμ. 2026) — δεν είναι σύσταση. Η εφαρμογή δεν κάνει flash.'));
+  }
+  out.append(k);
+}
+
 // ------------------------------------------------------------------ όχημα / κονσόλα
 function renderInfo() {
   const box = $('info-out');
@@ -628,6 +708,8 @@ function init() {
   $('kb-form').onsubmit = kbSearch;
   $('kb-list').append(...KB_CODES.map((c) => { const o = el('option'); o.value = c; return o; }));
   $('btn-report').onclick = reportFromCurrent;
+  $('btn-ecu').onclick = () => readEcu().catch((e) => log('!', e.message));
+  renderEcu(store.get('obd.ecuId', null));
   $('csv-in').onchange = importCsv;
   $('rp-play').onclick = () => {
     const r = S.replay; if (!r) return;
