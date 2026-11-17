@@ -21,6 +21,7 @@ AT_PATTERNS = [
     r"ST[0-9A-F]{2}", r"SP[0-9A-C]", r"SPA[0-9A-C]", r"TP[0-9A-C]",
     r"CAF[01]", r"CFC[01]", r"SH[0-9A-F]{3}", r"SH[0-9A-F]{6}",
     r"CRA[0-9A-F]{3}", r"CRA", r"FCSH[0-9A-F]{3}", r"FCSD[0-9A-F]{2,10}", r"FCSM[012]",
+    r"CF[0-9A-F]{3}", r"CM[0-9A-F]{3}",
 ]
 # --- SAFETY-RULES-END ---
 

@@ -21,7 +21,7 @@ ALLOWED = [
     "0100", "01 0C", "0200", "03", "0600", "07", "0902", "0A",
     "1902FF", "190A", "22F190", "22 F1 87", "1001",
     "ATZ", "ATE0", "ATSP0", "ATSH7E0", "ATSH7DF", "ATDPN", "ATRV",
-    "ATCRA7E8", "ATFCSH7E0", "ATST64", "ATCAF1",
+    "ATCRA7E8", "ATFCSH7E0", "ATST64", "ATCAF1", "ATCF700", "ATCM700",
 ]
 
 

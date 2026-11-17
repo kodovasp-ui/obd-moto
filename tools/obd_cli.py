@@ -44,13 +44,14 @@ class BleLink:
 
     async def open(self):
         from bleak import BleakClient
+        from bleak.exc import BleakError
         for attempt in range(4):
             self.client = BleakClient(self.addr, timeout=20)
             try:
                 await self.client.connect()
                 await self.client.start_notify(NOTIFY_UUID, self._on)
                 return
-            except (OSError, asyncio.TimeoutError) as e:
+            except (OSError, asyncio.TimeoutError, BleakError) as e:
                 await self.close()
                 if attempt == 3:
                     raise SystemExit(f"Αποτυχία σύνδεσης BLE: {e}")
