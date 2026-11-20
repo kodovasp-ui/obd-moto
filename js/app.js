@@ -11,7 +11,7 @@ import { LineChart } from './chart.js';
 import { newSession, downloadCsv, fromCsv, SERIES_META } from './session.js';
 import { saveSession, getSession, listSessions, deleteSession } from './db.js';
 import { buildReport, compareReports } from './health.js';
-import { lookup, KB_CODES } from './dtc-kb.js';
+import { lookup, ALL_CODES, kbCoverage } from './dtc-kb.js';
 import * as AI from './assistant.js';
 import { ECU_DB, REFERENCE, ECU_DIDS } from './ecu-db.js';
 import { scanEcus, ecuLabel, SCAN_MODES } from './ecu-scan.js';
@@ -429,7 +429,11 @@ function kbCard(code, open = false) {
   d.open = open;
   const sum = el('summary');
   sum.append(el('span', 'code bad', e.code), el('span', '', e.t));
+  const level = { full: ['ok', 'με οδηγό ελέγχου'], title: ['info', 'τίτλος SAE'] }[e.known]
+    || ['warn', 'μόνο δομή κωδικού'];
+  sum.append(el('span', `pill ${level[0]}`, level[1]));
   d.append(sum);
+  if (e.sub) d.append(el('p', 'muted small', 'Υποσύστημα: ' + e.sub));
   if (e.causes.length) {
     d.append(el('h3', '', 'Πιθανές αιτίες'));
     const ul = el('ul');
@@ -1024,7 +1028,12 @@ function init() {
   $('confirm-clear').addEventListener('close', () => onClearClosed().catch((e) => log('!', e.message)));
   $('console-form').onsubmit = sendConsole;
   $('kb-form').onsubmit = kbSearch;
-  $('kb-list').append(...KB_CODES.map((c) => { const o = el('option'); o.value = c; return o; }));
+  $('kb-list').append(...ALL_CODES.map((c) => { const o = el('option'); o.value = c; return o; }));
+  const cov = kbCoverage();
+  $('kb-coverage').textContent = `Βάση: ${cov.full} κωδικοί με πλήρη οδηγό ελέγχου, `
+    + `${cov.titles} με τίτλο SAE, ${cov.families} από συστηματικές οικογένειες `
+    + `(ανά κύλινδρο, bank/αισθητήρα, πηνίο) — σύνολο ${cov.full + cov.titles + cov.families}. `
+    + 'Ό,τι δεν καλύπτεται δείχνει τουλάχιστον το υποσύστημα.';
   $('btn-report').onclick = reportFromCurrent;
   $('btn-ecu').onclick = () => readEcu().catch((e) => log('!', e.message));
   renderEcu(store.get('obd.ecuId', null));

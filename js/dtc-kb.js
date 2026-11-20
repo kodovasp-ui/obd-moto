@@ -3,6 +3,8 @@
 // Αιτίες / βήματα: γενική καθοδήγηση συνεργείου — ΕΠΙΒΕΒΑΙΩΣΕ με το εγχειρίδιο σέρβις του 450MT
 // (τιμές αντιστάσεων, pinout, διαδικασίες). Live τιμές: PID mode 01 που αξίζει να δεις.
 
+import { TITLES, genericTitle, subsystem, isGeneric, SYS_NAME, coverage } from './dtc-generic.js';
+
 export const SRC = {
   sae: { name: 'SAE J2012 — τυποποιημένοι γενικοί κωδικοί OBD-II', url: 'https://www.sae.org/standards/content/j2012_201812/' },
   crm: { name: 'car-repairmanual.com — λίστα κωδικών CFMOTO (ανεπίσημη, κυρίως ATV, παραλλαγές Bosch/Delphi)', url: 'https://www.car-repairmanual.com/all-motorcycle-manual/cfmoto/cfmoto-error-codes/' },
@@ -223,24 +225,72 @@ const E = {
   U0155: { t: 'Χαμένη επικοινωνία με ταμπλό', causes: ['Τροφοδοσία ταμπλό', 'Καλωδίωση CAN προς ταμπλό'], steps: ['Έλεγξε ασφάλεια/φις ταμπλό.', 'Έλεγξε CAN.'], live: [], src: ['sae'] },
 };
 
-const SYS = { P: 'Κινητήρας/κιβώτιο', C: 'Πλαίσιο (ABS κ.λπ.)', B: 'Αμάξωμα', U: 'Δίκτυο επικοινωνίας' };
-const SUB = {
-  0: 'Μέτρηση καυσίμου/αέρα & εκπομπές', 1: 'Μέτρηση καυσίμου/αέρα', 2: 'Κύκλωμα μπεκ', 3: 'Ανάφλεξη / misfire',
-  4: 'Βοηθητικά συστήματα εκπομπών', 5: 'Ταχύτητα / ρελαντί', 6: 'ECU & έξοδοι', 7: 'Κιβώτιο', 8: 'Κιβώτιο', 9: 'Κιβώτιο',
-};
+// Live PID που αξίζει να δεις ανά υποσύστημα, όταν έχουμε μόνο τον τίτλο του κωδικού.
+const LIVE_BY_RANGE = [
+  [1, 99, ['06', '07', '14', '0B', '0C']],
+  [100, 199, ['0B', '10', '0F', '11', '06', '07', '14', '05']],
+  [200, 299, ['0C', '06', '07', '0B', '11']],
+  [300, 399, ['0C', '06', '07', '14', '0E', '04']],
+  [400, 499, ['14', '15', '2E', '06', '07', '3C']],
+  [500, 599, ['0C', '0D', '11', '05', '42']],
+  [600, 699, ['42', '0C']],
+  [700, 999, ['0D', '0C', 'A4']],
+  [2000, 2999, ['06', '07', '14', '0B', '0C', '11']],
+];
 
-/** Επιστρέφει εγγραφή βάσης γνώσης ή γενική αποκωδικοποίηση της δομής του κωδικού. */
+function liveForCode(c) {
+  if (c[0] !== 'P') return c[0] === 'C' ? ['0D'] : [];
+  if (c.startsWith('P0A')) return ['5B', '42', '0D']; // υβριδικά / μπαταρία
+  const n = parseInt(c.slice(1), 10);
+  if (!Number.isFinite(n) || /[A-F]/.test(c.slice(1))) return [];
+  return LIVE_BY_RANGE.find(([lo, hi]) => n >= lo && n <= hi)?.[2] || [];
+}
+
+/**
+ * Επιστρέφει εγγραφή βάσης γνώσης σε τρία επίπεδα:
+ *   known: 'full'  — τίτλος + αιτίες + βήματα ελέγχου (χειρόγραφη εγγραφή)
+ *   known: 'title' — τίτλος από τη λίστα γενικών κωδικών SAE
+ *   known: false   — μόνο η δομή του κωδικού (σύστημα + υποσύστημα)
+ */
 export function lookup(code) {
   const c = String(code).toUpperCase();
   const e = E[c];
-  if (e) return { code: c, known: true, ...e, sources: e.src.map((k) => SRC[k]) };
-  const generic = c[1] === '0' || c[1] === '2' || (c[0] === 'U' && c[1] === '0');
+  if (e) {
+    return { code: c, known: 'full', ...e, sources: e.src.map((k) => SRC[k]), sub: subsystem(c) };
+  }
+
+  const title = genericTitle(c);
+  const gen = isGeneric(c);
+  const sub = subsystem(c);
+  if (title) {
+    return {
+      code: c, known: 'title', t: title, sub,
+      causes: [],
+      steps: [CHECK_CONN,
+        'Για αιτίες και διαδικασία ελέγχου: εγχειρίδιο σέρβις του οχήματος, ή ρώτα τον Βοηθό διάγνωσης (καρτέλα Βοηθός) — βλέπει και τις live τιμές.',
+        LAST],
+      live: liveForCode(c), sources: [SRC.sae],
+    };
+  }
+
   return {
-    code: c, known: false,
-    t: `${SYS[c[0]] || 'Άγνωστο σύστημα'} — ${generic ? 'γενικός (SAE)' : 'ειδικός κατασκευαστή'} κωδικός${c[0] === 'P' ? `, υποσύστημα: ${SUB[c[2]] || '—'}` : ''}`,
-    causes: [], steps: ['Δεν υπάρχει ακόμα στη βάση γνώσης. Ψάξε τον κωδικό στο εγχειρίδιο σέρβις του 450MT ή ρώτα τον Βοηθό διάγνωσης.'],
-    live: [], sources: [SRC.sae],
+    code: c, known: false, sub,
+    t: `${SYS_NAME[c[0]] || 'Άγνωστο σύστημα'} — ${gen ? 'γενικός (SAE)' : 'ειδικός κατασκευαστή'} κωδικός`
+      + (sub ? `, υποσύστημα: ${sub}` : ''),
+    causes: [],
+    steps: ['Δεν υπάρχει ακόμα στη βάση γνώσης. Ψάξε τον κωδικό στο εγχειρίδιο σέρβις του οχήματος ή ρώτα τον Βοηθό διάγνωσης.'],
+    live: liveForCode(c), sources: [SRC.sae],
   };
 }
 
+/** Κωδικοί με χειρόγραφη εγγραφή (αιτίες + βήματα). */
 export const KB_CODES = Object.keys(E).sort();
+
+/** Όλοι οι κωδικοί που αναγνωρίζουμε με τίτλο — για αυτόματη συμπλήρωση στην αναζήτηση. */
+export const ALL_CODES = [...new Set([...Object.keys(E), ...Object.keys(TITLES)])].sort();
+
+/** Σύνοψη κάλυψης για το UI. */
+export function kbCoverage() {
+  const { titles, families } = coverage();
+  return { full: Object.keys(E).length, titles, families };
+}
