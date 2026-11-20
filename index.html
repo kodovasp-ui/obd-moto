@@ -49,8 +49,10 @@
         <button id="btn-live" disabled>Έναρξη</button>
         <button id="btn-rec" disabled aria-pressed="false">● Καταγραφή</button>
         <button id="btn-export" class="ghost" disabled>Εξαγωγή CSV</button>
+        <button id="btn-pids" class="ghost" disabled>⚙ Επιλογή PID</button>
         <span class="muted small" id="live-rate"></span>
       </div>
+      <p class="muted small" id="pid-summary"></p>
       <div id="replay-bar" class="card replay" hidden>
         <button id="rp-play">▶</button>
         <input type="range" id="rp-pos" min="0" max="100" step="0.1" value="0" aria-label="Θέση αναπαραγωγής">
@@ -64,6 +66,15 @@
       <p class="muted small">Πάτα σε μια κάρτα για να εμφανιστεί/κρυφτεί το γράφημά της.</p>
       <div class="tiles" id="tiles"><p class="empty">Σύνδεσου, πάτα Demo ή άνοιξε μια συνεδρία από το Ιστορικό.</p></div>
       <div class="charts" id="charts"></div>
+      <div class="card">
+        <h2>PID κατάστασης</h2>
+        <p class="muted small">Τιμές που δεν είναι αριθμοί (βρόχος καυσίμου, τύπος καυσίμου, πρότυπο OBD)
+          και PID που δεν αναγνωρίζουμε — δείχνονται ως raw bytes αντί να κρυφτούν. Διαβάζονται μία φορά.</p>
+        <div class="toolbar">
+          <button id="pid-status-read" disabled>Διάβασε</button>
+        </div>
+        <div id="pid-status"></div>
+      </div>
     </section>
 
     <!-- ΚΩΔΙΚΟΙ -->
@@ -178,6 +189,24 @@
     <span>Μόνο ανάγνωση · καμία εγγραφή στην ECU</span>
     <span id="version"></span>
   </footer>
+
+  <dialog id="pid-dialog" class="wide">
+    <form method="dialog">
+      <h2>Επιλογή PID</h2>
+      <p class="muted small">Μόνο όσα δηλώνει η ECU αυτού του οχήματος. Η επιλογή αποθηκεύεται ανά VIN.
+        Τα γκρι (κατάσταση / raw) δεν μπαίνουν σε κάρτες — τα βλέπεις στο «PID κατάστασης».</p>
+      <div class="toolbar">
+        <button type="button" id="pid-all" class="ghost">Όλα</button>
+        <button type="button" id="pid-none" class="ghost">Κανένα</button>
+      </div>
+      <div id="pid-list" class="pid-list"></div>
+      <p class="small err" id="pid-note"></p>
+      <div class="toolbar end">
+        <button value="cancel">Άκυρο</button>
+        <button type="button" id="pid-apply" class="primary">Εφαρμογή</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="confirm-clear">
     <form method="dialog">

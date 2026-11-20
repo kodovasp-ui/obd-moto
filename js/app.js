@@ -3,7 +3,9 @@
 import { Elm } from './elm.js';
 import { BleTransport } from './transport-ble.js';
 import { SimTransport } from './transport-sim.js';
-import { PIDS, LIVE_DEFAULT, decodePid, decodeDtcs } from './pids.js';
+import {
+  PIDS, GROUPS, decodePid, decodeDtcs, defaultLivePids, describePid, isMeta, isNumeric, pidName,
+} from './pids.js';
 import { UnsafeCommand } from './safety.js';
 import { LineChart } from './chart.js';
 import { newSession, downloadCsv, fromCsv, SERIES_META } from './session.js';
@@ -26,7 +28,7 @@ const store = {
 };
 
 const S = {
-  elm: null, transport: null, supported: [], vin: null,
+  elm: null, transport: null, supported: [], supported02: [], vin: null, pidSel: null,
   live: false, cur: null, rec: null, t0: 0,
   replay: null, // {session, t, playing, speed}
   diag: null, // {dtcs, status, freeze}
@@ -55,7 +57,8 @@ function setStatus(text, on) {
   $('status').classList.toggle('on', !!on);
 }
 function setConnected(on) {
-  for (const id of ['btn-live', 'btn-dtc', 'btn-clear', 'console-in', 'console-send', 'btn-rec', 'btn-ecu']) $(id).disabled = !on;
+  for (const id of ['btn-live', 'btn-dtc', 'btn-clear', 'console-in', 'console-send', 'btn-rec', 'btn-ecu',
+    'btn-pids', 'pid-status-read']) $(id).disabled = !on;
   $('btn-connect').textContent = on ? 'Αποσύνδεση' : 'Σύνδεση BLE';
   $('btn-demo').disabled = on;
 }
@@ -74,8 +77,11 @@ async function connect(kind) {
     setStatus(`Αρχικοποίηση ${t.name}…`);
     const info = await S.elm.init();
     if (!/ELM/i.test(info.elm)) throw new Error('Ο adapter δεν απάντησε στο ATZ.');
-    S.supported = await S.elm.supportedPids();
+    // Το όχημα δηλώνει μόνο του τι υποστηρίζει· κρατάμε έξω τα bitmap PID υποδομής.
+    S.supported = (await S.elm.supportedPids()).filter((p) => !isMeta(p));
     S.vin = await S.elm.readVin();
+    loadPidSel();
+    renderPidSummary();
     exitReplay();
     S.cur = newSession({ vin: S.vin, source: kind === 'sim' ? 'demo' : 'ble', pids: livePids() });
     setConnected(true);
@@ -96,6 +102,10 @@ function cleanup(msg) {
   if (S.rec) stopRecording().catch((e) => log('!', e.message));
   S.elm = null;
   S.transport = null;
+  S.supported = [];
+  S.pidSel = null;
+  $('pid-summary').textContent = '';
+  $('pid-status').replaceChildren();
   setConnected(false);
   setStatus('Αποσυνδεδεμένο');
   $('btn-live').textContent = 'Έναρξη';
@@ -111,8 +121,112 @@ async function disconnect() {
   await t?.disconnect();
 }
 
+// ------------------------------------------------------------------ επιλογή PID ανά όχημα
+// Κάθε όχημα δηλώνει μόνο του ποια PID υποστηρίζει (mode 01, PID 00/20/40/…).
+// Η επιλογή του χρήστη αποθηκεύεται ανά VIN, ώστε να αλλάζεις όχημα χωρίς ρυθμίσεις.
+
+function pidSelKey() {
+  return 'obd.pids.' + (S.vin || S.elm?.info?.protocolNum || 'default');
+}
+
+function loadPidSel() {
+  const saved = store.get(pidSelKey(), null);
+  const usable = Array.isArray(saved) ? saved.filter((p) => S.supported.includes(p) && isNumeric(p)) : [];
+  S.pidSel = usable.length ? usable : defaultLivePids(S.supported);
+}
+
+function savePidSel() {
+  store.set(pidSelKey(), S.pidSel);
+}
+
 function livePids() {
-  return LIVE_DEFAULT.filter((p) => S.supported.includes(p));
+  if (!S.pidSel) loadPidSel();
+  return S.pidSel.filter((p) => S.supported.includes(p));
+}
+
+/** Σύνοψη: πόσα PID δηλώνει το όχημα, πόσα δείχνουμε, πόσα δεν αναγνωρίζουμε. */
+function renderPidSummary() {
+  const box = $('pid-summary');
+  if (!box) return;
+  const num = S.supported.filter(isNumeric).length;
+  const unknown = S.supported.filter((p) => !PIDS[p]);
+  box.textContent = S.supported.length
+    ? `Το όχημα δηλώνει ${S.supported.length} PID (${num} μετρήσιμα). Στο ταμπλό: ${livePids().length}.`
+      + (unknown.length ? ` ${unknown.length} άγνωστα δείχνονται ως raw.` : '')
+    : 'Δεν δηλώθηκαν PID.';
+  $('btn-pids').disabled = !S.supported.length;
+}
+
+/** Διάλογος επιλογής PID: όλα τα υποστηριζόμενα, ομαδοποιημένα. */
+function openPidPicker() {
+  const dlg = $('pid-dialog');
+  const body = $('pid-list');
+  body.replaceChildren();
+  const byGroup = new Map();
+  for (const pid of S.supported) {
+    const g = PIDS[pid]?.g || 'unknown';
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g).push(pid);
+  }
+  const order = [...Object.keys(GROUPS), 'unknown'];
+  for (const g of order) {
+    const list = byGroup.get(g);
+    if (!list?.length) continue;
+    const sec = el('div', 'pid-group');
+    sec.append(el('h3', '', g === 'unknown' ? 'Άγνωστα / raw' : GROUPS[g]));
+    for (const pid of list) {
+      const p = PIDS[pid];
+      const num = isNumeric(pid);
+      const lab = el('label', 'pid-row' + (num ? '' : ' muted'));
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.value = pid;
+      cb.checked = num && S.pidSel.includes(pid);
+      cb.disabled = !num;
+      lab.append(cb, el('span', 'mono small', pid), el('span', '', pidName(pid)));
+      if (p?.unit) lab.append(el('span', 'muted small', p.unit));
+      if (!num) lab.append(el('span', 'muted small', p?.kind === 'enum' ? '(κατάσταση)' : '(raw)'));
+      sec.append(lab);
+    }
+    body.append(sec);
+  }
+  $('pid-note').textContent = '';
+  dlg.showModal();
+}
+
+function applyPidPicker() {
+  const picked = [...$('pid-list').querySelectorAll('input:checked')].map((c) => c.value);
+  if (!picked.length) { $('pid-note').textContent = 'Διάλεξε τουλάχιστον ένα PID.'; return; }
+  S.pidSel = picked;
+  savePidSel();
+  if (S.cur) S.cur.pids = livePids();
+  buildDashboard(livePids());
+  renderPidSummary();
+  $('pid-dialog').close('ok');
+}
+
+/** Διαβάζει μία φορά τα PID κατάστασης / raw και τα δείχνει σε πίνακα. */
+async function readStatusPids() {
+  if (!S.elm) return banner('Δεν υπάρχει σύνδεση.', true);
+  const list = S.supported.filter((p) => !isNumeric(p));
+  const box = $('pid-status');
+  box.replaceChildren();
+  if (!list.length) return box.append(el('p', 'empty', 'Το όχημα δεν δηλώνει PID κατάστασης.'));
+  const tbl = el('table');
+  const was = S.live;
+  if (was) S.live = false; // να μην μπλέκονται με το polling
+  try {
+    for (const pid of list) {
+      const d = await S.elm.pidData(pid);
+      const tr = el('tr');
+      tr.append(el('td', 'mono small', pid), el('td', '', pidName(pid)), el('td', 'mono', describePid(pid, d)));
+      tbl.append(tr);
+    }
+    box.append(tbl);
+  } catch (e) {
+    box.append(el('p', 'err', e.message));
+  }
+  if (was) toggleLive();
 }
 
 // ------------------------------------------------------------------ dashboard: κάρτες + γραφήματα
@@ -275,7 +389,7 @@ function exportCurrent() {
 function startReplay(session) {
   if (S.live) S.live = false;
   const keys = [...new Set([...session.pids, ...session.rows.flatMap((r) => Object.keys(r.v))])]
-    .filter((k) => k !== 'RV' && PIDS[k]);
+    .filter((k) => k !== 'RV' && PIDS[k] && isNumeric(k));
   S.replay = { session, t: session.rows[0]?.t || 0, playing: false, speed: +$('rp-speed').value };
   $('replay-bar').hidden = false;
   $('rp-title').textContent = sessionLabel(session);
@@ -351,7 +465,7 @@ async function readDtcs() {
   let freeze = null;
   const ffDtc = await S.elm.pidData('02', '02', '00');
   if (ffDtc && (ffDtc[0] || ffDtc[1])) {
-    const sup = (await S.elm.supportedPids('02')).filter((p) => PIDS[p]);
+    const sup = (await S.elm.supportedPids('02')).filter((p) => PIDS[p] && isNumeric(p));
     const values = [];
     for (const pid of sup) values.push([pid, await S.elm.readPid(pid, '02')]);
     freeze = { code: decodeDtcs(ffDtc.slice(0, 2))[0], values };
@@ -795,6 +909,11 @@ function init() {
   $('btn-connect').onclick = () => connect('ble');
   $('btn-demo').onclick = () => connect('sim');
   $('btn-live').onclick = toggleLive;
+  $('btn-pids').onclick = openPidPicker;
+  $('pid-apply').onclick = applyPidPicker;
+  $('pid-all').onclick = () => $('pid-list').querySelectorAll('input:not(:disabled)').forEach((c) => { c.checked = true; });
+  $('pid-none').onclick = () => $('pid-list').querySelectorAll('input').forEach((c) => { c.checked = false; });
+  $('pid-status-read').onclick = () => readStatusPids().catch((e) => log('!', e.message));
   $('btn-rec').onclick = () => toggleRecording().catch((e) => log('!', e.message));
   $('btn-export').onclick = exportCurrent;
   $('btn-dtc').onclick = () => readDtcs().catch((e) => log('!', e.message));
