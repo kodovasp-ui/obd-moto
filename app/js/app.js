@@ -14,6 +14,7 @@ import { buildReport, compareReports } from './health.js';
 import { lookup, KB_CODES } from './dtc-kb.js';
 import * as AI from './assistant.js';
 import { ECU_DB, REFERENCE, ECU_DIDS } from './ecu-db.js';
+import { scanEcus, ecuLabel, SCAN_MODES } from './ecu-scan.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -37,6 +38,7 @@ const S = {
   chartKeys: store.get('obd.charts', ['0C', '05', '06', '07', '14', 'RV']),
   aiAbort: null,
   chatLive: { on: false, busy: false, timer: null, abort: null, msgs: [] },
+  ecus: null, scan: null, // σάρωση μονάδων
 };
 
 // ------------------------------------------------------------------ log / banner / status
@@ -58,7 +60,7 @@ function setStatus(text, on) {
 }
 function setConnected(on) {
   for (const id of ['btn-live', 'btn-dtc', 'btn-clear', 'console-in', 'console-send', 'btn-rec', 'btn-ecu',
-    'btn-pids', 'pid-status-read']) $(id).disabled = !on;
+    'btn-pids', 'pid-status-read', 'btn-scan']) $(id).disabled = !on;
   $('btn-connect').textContent = on ? 'Αποσύνδεση' : 'Σύνδεση BLE';
   $('btn-demo').disabled = on;
 }
@@ -104,6 +106,7 @@ function cleanup(msg) {
   S.transport = null;
   S.supported = [];
   S.pidSel = null;
+  if (S.scan) S.scan.stop = true;
   $('pid-summary').textContent = '';
   $('pid-status').replaceChildren();
   setConnected(false);
@@ -649,7 +652,7 @@ function aiContext() {
   const s = S.reportSession || S.replay?.session || S.cur;
   const diag = S.diag || (s && { dtcs: s.dtcs, status: s.status, freeze: s.freeze }) || {};
   return AI.buildContext({
-    info: S.elm?.info, vin: S.vin || s?.vin, session: s, ...diag,
+    info: S.elm?.info, vin: S.vin || s?.vin, session: s, ...diag, ecus: S.ecus,
     report: S.report || (s?.rows?.length ? buildReport(s) : null), symptoms: $('ai-symptoms').value,
   });
 }
@@ -677,12 +680,104 @@ async function runAi() {
   }
 }
 
+// ------------------------------------------------------------------ σάρωση μονάδων (ECU)
+function renderScan(list) {
+  const box = $('scan-out');
+  box.replaceChildren();
+  if (!list.length) {
+    box.append(el('p', 'empty', 'Καμία μονάδα δεν απάντησε. Είναι το κλειδί στο ON; Δοκίμασε άλλο εύρος.'));
+    return;
+  }
+  const withDtc = list.filter((e) => e.dtcs.length);
+  const total = withDtc.reduce((n, e) => n + e.dtcs.length, 0);
+  box.append(el('p', 'muted small',
+    `Απάντησαν ${list.length} μονάδες · ${withDtc.length} με κωδικούς (${total} συνολικά).`));
+
+  for (const ecu of list) {
+    const card = el('div', 'card');
+    const head = el('h2', '', ecuLabel(ecu));
+    if (ecu.dtcs.length) head.append(el('span', 'pill bad', `${ecu.dtcs.length} κωδ.`));
+    card.append(head);
+
+    const dl = el('dl', 'kv');
+    const add = (k, v) => { if (v) dl.append(el('dt', '', k), el('dd', '', v)); };
+    add('Διεύθυνση', `${ecu.req} → ${ecu.resp} (${ecu.wide ? 'CAN 29-bit' : 'CAN 11-bit'})`);
+    if (ecu.hint && ecu.hint !== ecu.name) add('Πιθανή μονάδα', ecu.hint);
+    add('Όνομα (F197)', ecu.ids.name);
+    add('Σειριακός (F18C)', ecu.ids.serial);
+    add('Ανταλλακτικό (F187)', ecu.ids.part);
+    add('VIN (F190)', ecu.ids.vin);
+    card.append(dl);
+
+    if (ecu.negative) {
+      card.append(el('p', 'small muted',
+        'Απάντησε αρνητικά στο 10 01 — η μονάδα υπάρχει αλλά δεν δέχεται default session από εδώ.'));
+    }
+    if (ecu.error) card.append(el('p', 'small err', '⚠ ' + ecu.error));
+
+    if (ecu.dtcs.length) {
+      const t = el('table');
+      const hr = el('tr');
+      hr.append(el('th', '', 'Κωδικός'), el('th', '', 'Περιγραφή'), el('th', '', 'Κατάσταση'));
+      t.append(hr);
+      for (const d of ecu.dtcs) {
+        const tr = el('tr');
+        tr.append(
+          el('td', 'mono', `${d.code}-${d.ftb}`),
+          el('td', '', lookup(d.code).t),
+          el('td', 'small muted', d.flags.join(', ') || '—'),
+        );
+        t.append(tr);
+      }
+      card.append(t);
+    } else if (!ecu.error) {
+      card.append(el('p', 'small', 'Χωρίς αποθηκευμένους κωδικούς.'));
+    }
+    box.append(card);
+  }
+}
+
+async function runScan() {
+  if (!S.elm) return banner('Σύνδεσε τη μοτοσυκλέτα ή πάτα Demo πρώτα.', true);
+  if (S.scan?.running) return;
+  if (S.live) { S.live = false; await new Promise((r) => setTimeout(r, 400)); }
+  S.scan = { running: true, stop: false };
+  $('btn-scan').disabled = true;
+  $('btn-scan-stop').hidden = false;
+  $('scan-progress').hidden = false;
+  banner('');
+  try {
+    const list = await scanEcus(S.elm, {
+      mode: $('scan-mode').value,
+      readDtcs: $('scan-dtcs').checked,
+      readIds: $('scan-ids').checked,
+      stop: () => S.scan.stop,
+      onProgress: ({ done, total, found, addr, phase }) => {
+        $('scan-progress').querySelector('i').style.width = (total ? (done / total) * 100 : 0).toFixed(0) + '%';
+        if (phase === 'done') $('scan-status').textContent = `Τέλος · ${found} μονάδες`;
+        else if (phase === 'read') $('scan-status').textContent = `Ανάγνωση ${addr}… (${found} μονάδες)`;
+        else $('scan-status').textContent = `${done}/${total} · ${addr} · βρέθηκαν ${found}`;
+      },
+    });
+    S.ecus = list;
+    renderScan(list);
+    if (S.scan.stop) banner('Η σάρωση διακόπηκε — τα αποτελέσματα είναι μερικά.');
+  } catch (e) {
+    log('!', e.message);
+    banner('Η σάρωση απέτυχε: ' + e.message, true);
+  } finally {
+    S.scan.running = false;
+    $('btn-scan').disabled = !S.elm;
+    $('btn-scan-stop').hidden = true;
+  }
+}
+
 // ------------------------------------------------------------------ ζωντανή συνομιλία (live)
 function liveSystem() {
   const diag = S.diag || {};
   const base = AI.buildBaseline({
     info: S.elm?.info, vin: S.vin,
-    dtcs: diag.dtcs, status: diag.status, freeze: diag.freeze,
+    dtcs: diag.dtcs, status: diag.status, freeze: diag.freeze, ecus: S.ecus,
     report: S.report || (S.cur?.rows?.length ? buildReport(S.cur) : null),
   });
   return AI.SYSTEM_LIVE + '\n\n# Βάση συνεδρίας\n' + base;
@@ -914,6 +1009,13 @@ function init() {
   $('pid-all').onclick = () => $('pid-list').querySelectorAll('input:not(:disabled)').forEach((c) => { c.checked = true; });
   $('pid-none').onclick = () => $('pid-list').querySelectorAll('input').forEach((c) => { c.checked = false; });
   $('pid-status-read').onclick = () => readStatusPids().catch((e) => log('!', e.message));
+  for (const [k, v] of Object.entries(SCAN_MODES)) {
+    const o = el('option', '', v.label);
+    o.value = k;
+    $('scan-mode').append(o);
+  }
+  $('btn-scan').onclick = runScan;
+  $('btn-scan-stop').onclick = () => { if (S.scan) S.scan.stop = true; };
   $('btn-rec').onclick = () => toggleRecording().catch((e) => log('!', e.message));
   $('btn-export').onclick = exportCurrent;
   $('btn-dtc').onclick = () => readDtcs().catch((e) => log('!', e.message));

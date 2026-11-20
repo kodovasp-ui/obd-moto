@@ -19,8 +19,9 @@ AT_PATTERNS = [
     r"Z", r"WS", r"D", r"I", r"@1", r"RV", r"DP", r"DPN", r"PC",
     r"E[01]", r"L[01]", r"S[01]", r"H[01]", r"M0", r"AT[012]",
     r"ST[0-9A-F]{2}", r"SP[0-9A-C]", r"SPA[0-9A-C]", r"TP[0-9A-C]",
-    r"CAF[01]", r"CFC[01]", r"SH[0-9A-F]{3}", r"SH[0-9A-F]{6}",
-    r"CRA[0-9A-F]{3}", r"CRA", r"FCSH[0-9A-F]{3}", r"FCSD[0-9A-F]{2,10}", r"FCSM[012]",
+    r"CAF[01]", r"CFC[01]", r"SH[0-9A-F]{3}", r"SH[0-9A-F]{6}", r"SH[0-9A-F]{8}",
+    r"CRA[0-9A-F]{3}", r"CRA[0-9A-F]{8}", r"CRA", r"FCSH[0-9A-F]{3}", r"FCSH[0-9A-F]{8}",
+    r"FCSD[0-9A-F]{2,10}", r"FCSM[012]",
     r"CF[0-9A-F]{3}", r"CM[0-9A-F]{3}",
 ]
 # --- SAFETY-RULES-END ---

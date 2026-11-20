@@ -22,6 +22,10 @@ ALLOWED = [
     "1902FF", "190A", "22F190", "22 F1 87", "1001",
     "ATZ", "ATE0", "ATSP0", "ATSH7E0", "ATSH7DF", "ATDPN", "ATRV",
     "ATCRA7E8", "ATFCSH7E0", "ATST64", "ATCAF1", "ATCF700", "ATCM700",
+    # 29-bit CAN (σάρωση μονάδων): φίλτρο/flow-control με 8 hex — ρυθμίσεις adapter
+    "ATCRA18DAF110", "ATFCSH18DA10F1", "ATSH18DA10F1", "ATSHDA10F1",
+    "ATSP7", "ATFCSD300000", "ATFCSM1", "ATCRA",
+    "190209", "1902FF", "190A", "22F197",
 ]
 
 
