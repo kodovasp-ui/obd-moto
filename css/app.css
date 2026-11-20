@@ -143,6 +143,16 @@ textarea { width: 100%; resize: vertical; margin-bottom: 10px; }
 .chat .ai { align-self: flex-start; border: 1px solid var(--border); border-left: 3px solid var(--accent); }
 .chat .ai.err { border-color: var(--bad); color: var(--bad); }
 
+/* ---- έτοιμα σετ, ειδοποιήσεις, γκαράζ */
+button.small { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+#preset-bar { gap: 6px; }
+#alerts-card summary { cursor: pointer; }
+#alerts-card[open] summary { margin-bottom: 8px; }
+#alerts-log p { margin: 2px 0; }
+#alerts-rules table { margin-bottom: 8px; }
+#alerts-rules input { min-height: 32px; }
+#garage-out .card .meta > div { margin: 1px 0; }
+
 /* ---- on-board tests (Mode 06) + readiness */
 .ok-txt { color: var(--ok); }
 .warn-txt { color: var(--warn); }

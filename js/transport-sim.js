@@ -119,25 +119,44 @@ export class SimTransport {
     return SIM_ECUS[this.hdr] || null;
   }
 
-  // Κατάσταση κινητήρα: ρελαντί που ζεσταίνεται, με περιοδικό «γκάζι» στις ~2500.
+  // Προφίλ δοκιμής: 0–12 s ρελαντί που ζεσταίνεται, 12–28 s επιτάχυνση από στάση
+  // ως ~110 km/h, μετά ταξίδι με διακυμάνσεις. Έτσι δοκιμάζονται και οι μετρήσεις
+  // ταξιδιού και επιδόσεων, όχι μόνο το ρελαντί.
   state() {
     const t = (performance.now() - this.t0) / 1000;
     const coolant = Math.min(92, 25 + t * 1.2);
-    const rev = (t % 40) > 28;
-    const rpm = (rev ? 2500 : 1500 + Math.max(0, 300 - t * 5)) + (Math.random() - 0.5) * 120;
+
+    let speed; let throttle; let load;
+    if (t < 12) {                       // ρελαντί
+      speed = 0; throttle = 6.7; load = 28 + Math.random();
+    } else if (t < 28) {                // επιτάχυνση από στάση
+      const a = (t - 12) / 16;
+      speed = 110 * a * a ** 0.4;       // πιο αργή αρχή, όπως στην πραγματικότητα
+      throttle = 62 + Math.random() * 6;
+      load = 78 + Math.random() * 8;
+    } else {                            // ταξίδι
+      speed = 92 + Math.sin((t - 28) / 7) * 9;
+      throttle = 16 + Math.sin((t - 28) / 7) * 4;
+      load = 34 + Math.sin((t - 28) / 7) * 6;
+    }
+    speed = Math.max(0, Math.min(130, speed));
+    const accel = t >= 12 && t < 28;
+    const rpm = (speed > 1 ? 1500 + speed * 52 : 1500 + Math.max(0, 300 - t * 5))
+      + (Math.random() - 0.5) * 120;
     const o2 = coolant > 50 ? (Math.sin(t * 6) > 0 ? 0.75 + Math.random() * 0.15 : 0.1 + Math.random() * 0.1) : 0.45;
+
     return {
-      t, coolant, rpm,
-      load: rev ? 31 : 28 + Math.random(), map: rev ? 35 : 40,
-      iat: 20 + t * 0.05, throttle: rev ? 7.8 : 6.7, speed: 0,
-      timing: rev ? 14 + Math.random() : 1 + Math.random() * 3.5,
+      t, coolant, rpm, load, throttle, speed,
+      map: accel ? 88 : speed > 1 ? 52 : 40,
+      iat: 20 + t * 0.05,
+      timing: accel ? 24 + Math.random() : speed > 1 ? 18 + Math.random() * 2 : 1 + Math.random() * 3.5,
       stft: coolant > 50 ? (Math.random() - 0.5) * 6 : 0, ltft: -2.3,
       o2a: o2, o2b: 0.78 + Math.random() * 0.03, volt: coolant > 30 ? 14 + Math.random() * 0.2 : 12.3,
-      maf: rev ? 6.4 : 2.5 + Math.random() * 0.3,
-      lam: coolant > 50 ? 1 + (Math.random() - 0.5) * 0.04 : 1.18,
-      cat: Math.min(520, 30 + t * 9),
-      egt: Math.min(430, 25 + t * 7.5),
-      fuelRate: rev ? 2.9 : 0.9 + Math.random() * 0.1,
+      maf: accel ? 28 + Math.random() * 3 : speed > 1 ? 9.5 + Math.random() : 2.5 + Math.random() * 0.3,
+      lam: coolant > 50 ? (accel ? 0.9 : 1) + (Math.random() - 0.5) * 0.04 : 1.18,
+      cat: Math.min(620, 30 + t * 11),
+      egt: Math.min(520, 25 + t * 9),
+      fuelRate: accel ? 13 + Math.random() : speed > 1 ? 4.6 + Math.random() * 0.4 : 0.9 + Math.random() * 0.1,
     };
   }
 

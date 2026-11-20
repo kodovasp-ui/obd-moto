@@ -1,6 +1,7 @@
 // Ελαφρύ γράφημα γραμμής σε canvas (ένα μέγεθος ανά γράφημα — small multiples, όχι διπλός άξονας).
 // Crosshair + tooltip στο hover, αυτόματη κλίμακα, θέμα από CSS μεταβλητές.
 import { SERIES_META } from './session.js';
+import { conv, unitLabel, decFor } from './units.js';
 
 function niceStep(range, n = 3) {
   const raw = range / n;
@@ -33,8 +34,19 @@ export class LineChart {
     this.last = null;
   }
 
+  /** Οι τιμές είναι μετρικές — μετατρέπονται μόνο για την εμφάνιση. */
   fmt(v) {
-    return v == null ? '—' : v.toFixed(this.meta.dec ?? 1);
+    if (v == null) return '—';
+    return conv(v, this.meta.unit).toFixed(decFor(this.meta.unit, this.meta.dec ?? 1));
+  }
+
+  get dispUnit() {
+    return unitLabel(this.meta.unit);
+  }
+
+  /** Μορφοποίηση τιμής που είναι ΗΔΗ σε μονάδες εμφάνισης. */
+  fmtDisp(v) {
+    return v == null ? '—' : v.toFixed(decFor(this.meta.unit, this.meta.dec ?? 1));
   }
 
   /** rows: [{t, v}], opts: {t0, t1, cursorT} */
@@ -70,13 +82,16 @@ export class LineChart {
     const k = this.key;
     const t1 = opts.t1 ?? (rows.length ? rows[rows.length - 1].t : 0);
     const t0 = opts.t0 ?? Math.max(0, t1 - 60);
+    // Τα σημεία μετατρέπονται μία φορά εδώ, ώστε άξονας, γραμμή και tooltip
+    // να είναι όλα στις μονάδες εμφάνισης.
+    const un = this.meta.unit;
     const pts = [];
-    for (const r of rows) if (r.t >= t0 && r.t <= t1 && r.v[k] != null) pts.push([r.t, r.v[k]]);
+    for (const r of rows) if (r.t >= t0 && r.t <= t1 && r.v[k] != null) pts.push([r.t, conv(r.v[k], un)]);
 
     // κλίμακα Y
     let lo = Infinity; let hi = -Infinity;
     for (const [, v] of pts) { if (v < lo) lo = v; if (v > hi) hi = v; }
-    if (!pts.length) { lo = this.meta.min ?? 0; hi = this.meta.max ?? 1; }
+    if (!pts.length) { lo = conv(this.meta.min ?? 0, un); hi = conv(this.meta.max ?? 1, un); }
     if (hi - lo < 1e-9) { const p = Math.abs(hi) * 0.05 || 1; lo -= p; hi += p; }
     const step = niceStep(hi - lo);
     lo = Math.floor(lo / step) * step;
@@ -120,7 +135,7 @@ export class LineChart {
     const cur = opts.cursorT != null
       ? pts.reduce((b, p) => (Math.abs(p[0] - opts.cursorT) < Math.abs((b?.[0] ?? Infinity) - opts.cursorT) ? p : b), null)
       : pts[pts.length - 1];
-    this.valEl.textContent = cur ? `${this.fmt(cur[1])} ${this.meta.unit}` : '—';
+    this.valEl.textContent = cur ? `${this.fmtDisp(cur[1])} ${this.dispUnit}` : '—';
 
     // hover: crosshair + δείκτης + tooltip
     if (this.hoverX != null && pts.length) {
@@ -133,7 +148,7 @@ export class LineChart {
       ctx.fillStyle = col.line; ctx.strokeStyle = col.surface; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(px, py, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       this.tip.hidden = false;
-      this.tip.textContent = `${best[0].toFixed(1)} s · ${this.fmt(best[1])} ${this.meta.unit}`;
+      this.tip.textContent = `${best[0].toFixed(1)} s · ${this.fmtDisp(best[1])} ${this.dispUnit}`;
       const tw = this.tip.offsetWidth;
       this.tip.style.left = (this.canvas.offsetLeft + Math.min(Math.max(0, px - tw / 2), W - tw)) + 'px';
       this.tip.style.top = (this.canvas.offsetTop + Math.max(0, py - 32)) + 'px';
