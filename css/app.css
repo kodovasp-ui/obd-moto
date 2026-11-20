@@ -143,6 +143,38 @@ textarea { width: 100%; resize: vertical; margin-bottom: 10px; }
 .chat .ai { align-self: flex-start; border: 1px solid var(--border); border-left: 3px solid var(--accent); }
 .chat .ai.err { border-color: var(--bad); color: var(--bad); }
 
+/* ---- on-board tests (Mode 06) + readiness */
+.ok-txt { color: var(--ok); }
+.warn-txt { color: var(--warn); }
+.bad-txt { color: var(--bad); }
+#m06-progress { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin: 4px 0 6px; }
+#m06-progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+#m06-status:empty { display: none; }
+#m06-out h2, #readiness-out h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#readiness-out h3 { font-size: 14px; margin: 12px 0 6px; }
+
+/* ---- εκτύπωση / PDF */
+#print-head { display: none; }
+@media print {
+  :root { --bg: #fff; --surface: #fff; --surface-2: #fff; --text: #000; --muted: #444; --border: #999; color-scheme: light; }
+  body { background: #fff; color: #000; font-size: 11pt; }
+  .top, .tabs, .foot, .banner, .toolbar, #replay-bar, dialog, #charts, #log,
+  #tab-live, #tab-history, #tab-ai, #tab-console, #tab-info, #tab-ecu { display: none !important; }
+  #print-head { display: block; padding: 0 0 10px; border-bottom: 1px solid #999; margin-bottom: 12px; }
+  #print-head h1 { font-size: 16pt; }
+  /* Οι καρτέλες είναι hidden στην οθόνη — στην εκτύπωση τις θέλουμε όλες */
+  body[data-printing] #tab-health[hidden],
+  body[data-printing] #tab-dtc[hidden],
+  body[data-printing] #tab-scan[hidden] { display: block !important; }
+  main { max-width: none; padding: 0; }
+  .card, .kb, .rep li { border: 1px solid #999; break-inside: avoid; page-break-inside: avoid; }
+  .kb { display: block !important; }
+  .kb > *:not(summary):not(.src) { display: block !important; }
+  details:not([open]) > *:not(summary) { display: block !important; }
+  a { color: #000; text-decoration: none; }
+  .pill { border: 1px solid #666; }
+}
+
 /* ---- σάρωση μονάδων */
 #scan-progress { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin: 4px 0 6px; }
 #scan-progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }

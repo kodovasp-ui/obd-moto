@@ -31,6 +31,14 @@
 
   <div id="banner" class="banner" hidden></div>
 
+  <!-- Επικεφαλίδα μόνο για εκτύπωση / PDF -->
+  <div id="print-head">
+    <h1>Αναφορά διαγνωστικού ελέγχου OBD-II</h1>
+    <p id="print-meta" class="mono small"></p>
+    <p class="small">Μόνο ανάγνωση — καμία εγγραφή στην ECU. Οι τιμές αναφοράς είναι γενικές·
+      επιβεβαίωσε με το εγχειρίδιο σέρβις του οχήματος.</p>
+  </div>
+
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="live" aria-selected="true">Live</button>
     <button role="tab" data-tab="dtc">Κωδικοί</button>
@@ -124,11 +132,37 @@
     <section id="tab-health" class="tab" hidden>
       <div class="toolbar">
         <button id="btn-report">Αναφορά από την τρέχουσα καταγραφή</button>
+        <button id="btn-print" class="ghost">🖨 Εκτύπωση / PDF</button>
         <span class="muted small" id="report-src"></span>
       </div>
       <p class="muted small">Για πλήρη αναφορά: ζεστός κινητήρας, ~30 s ρελαντί και ~30 s στις 2500 rpm, και ανάγνωση κωδικών πριν.</p>
       <div id="report-out"></div>
       <div id="compare-out"></div>
+
+      <div class="card">
+        <h2>On-board tests (Mode 06)</h2>
+        <p class="muted small">Τα τεστ που τρέχει μόνη της η ECU, με τα <b>όρια</b> της. Αν μια τιμή πλησιάζει
+          το όριο, το εξάρτημα γερνάει — το βλέπεις <b>πριν</b> ανάψει η λυχνία. Μόνο ανάγνωση.
+          Πιο αξιόπιστα με ζεστό κινητήρα και ολοκληρωμένα readiness monitors.</p>
+        <div class="toolbar">
+          <button id="btn-m06" disabled>Διάβασε τεστ</button>
+          <button id="btn-m06-stop" class="ghost" hidden>Διακοπή</button>
+          <label class="small"><input type="checkbox" id="m06-unbounded"> Δείξε και τα τεστ χωρίς όρια</label>
+        </div>
+        <div id="m06-progress" class="bar" hidden><i></i></div>
+        <p class="muted small mono" id="m06-status"></p>
+        <div id="m06-out"></div>
+      </div>
+
+      <div class="card">
+        <h2>Readiness — τι λείπει για ΚΤΕΟ</h2>
+        <p class="muted small">Τα monitors ολοκληρώνονται μόνο αν οδηγήσεις με συγκεκριμένο τρόπο
+          (drive cycle). Μετά από σβήσιμο κωδικών ή αποσύνδεση μπαταρίας μηδενίζουν.</p>
+        <div class="toolbar">
+          <button id="btn-readiness" disabled>Έλεγχος readiness</button>
+        </div>
+        <div id="readiness-out"></div>
+      </div>
     </section>
 
     <!-- ΙΣΤΟΡΙΚΟ -->
