@@ -15,6 +15,8 @@ import { lookup, ALL_CODES, kbCoverage } from './dtc-kb.js';
 import * as AI from './assistant.js';
 import { ECU_DB, REFERENCE, ECU_DIDS } from './ecu-db.js';
 import { scanEcus, ecuLabel, SCAN_MODES } from './ecu-scan.js';
+import { readMode06, summarize, margin } from './mode06.js';
+import { readinessPlan } from './readiness.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -39,6 +41,7 @@ const S = {
   aiAbort: null,
   chatLive: { on: false, busy: false, timer: null, abort: null, msgs: [] },
   ecus: null, scan: null, // σάρωση μονάδων
+  m06: null, m06run: null, // on-board tests (Mode 06)
 };
 
 // ------------------------------------------------------------------ log / banner / status
@@ -60,7 +63,7 @@ function setStatus(text, on) {
 }
 function setConnected(on) {
   for (const id of ['btn-live', 'btn-dtc', 'btn-clear', 'console-in', 'console-send', 'btn-rec', 'btn-ecu',
-    'btn-pids', 'pid-status-read', 'btn-scan']) $(id).disabled = !on;
+    'btn-pids', 'pid-status-read', 'btn-scan', 'btn-m06', 'btn-readiness']) $(id).disabled = !on;
   $('btn-connect').textContent = on ? 'Αποσύνδεση' : 'Σύνδεση BLE';
   $('btn-demo').disabled = on;
 }
@@ -656,7 +659,7 @@ function aiContext() {
   const s = S.reportSession || S.replay?.session || S.cur;
   const diag = S.diag || (s && { dtcs: s.dtcs, status: s.status, freeze: s.freeze }) || {};
   return AI.buildContext({
-    info: S.elm?.info, vin: S.vin || s?.vin, session: s, ...diag, ecus: S.ecus,
+    info: S.elm?.info, vin: S.vin || s?.vin, session: s, ...diag, ecus: S.ecus, m06: S.m06,
     report: S.report || (s?.rows?.length ? buildReport(s) : null), symptoms: $('ai-symptoms').value,
   });
 }
@@ -682,6 +685,146 @@ async function runAi() {
   } finally {
     $('ai-run').disabled = false; $('ai-stop').hidden = true; S.aiAbort = null;
   }
+}
+
+// ------------------------------------------------------------------ on-board tests (Mode 06)
+function renderM06(groups) {
+  const box = $('m06-out');
+  box.replaceChildren();
+  if (!groups?.length) {
+    box.append(el('p', 'empty', 'Η ECU δεν έδωσε αποτελέσματα Mode 06. '
+      + 'Πολλές μοτοσυκλέτες και παλιότερα αυτοκίνητα δεν το υποστηρίζουν.'));
+    return;
+  }
+  const showUnbounded = $('m06-unbounded').checked;
+  const s = summarize(groups);
+  const head = el('p', 'muted small',
+    `${s.total} τεστ: ${s.pass} πέρασαν, ${s.fail} απέτυχαν`
+    + (s.unbounded ? `, ${s.unbounded} χωρίς πραγματικά όρια` : '') + '.');
+  box.append(head);
+
+  for (const g of groups) {
+    const rows = g.tests.filter((t) => t.bounded || showUnbounded);
+    if (!rows.length) continue;
+    const card = el('div', 'card');
+    const h = el('h2', '', g.name);
+    const bad = rows.filter((t) => t.bounded && !t.pass).length;
+    const near = rows.filter((t) => t.bounded && t.pass && margin(t) > 0.8).length;
+    if (bad) h.append(el('span', 'pill bad', `${bad} απέτυχαν`));
+    else if (near) h.append(el('span', 'pill warn', `${near} οριακά`));
+    else h.append(el('span', 'pill ok', 'OK'));
+    h.append(el('span', 'muted small mono', `MID ${g.mid}`));
+    card.append(h);
+
+    const t = el('table');
+    const hr = el('tr');
+    hr.append(el('th', '', 'Test'), el('th', '', 'Τιμή'), el('th', '', 'Όρια'), el('th', '', 'Κατάσταση'));
+    t.append(hr);
+    for (const x of rows) {
+      const tr = el('tr');
+      const dec = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
+      const u = x.unit ? ' ' + x.unit : '';
+      let state;
+      let cls = '';
+      if (!x.bounded) { state = 'χωρίς όρια'; cls = 'muted'; } else if (!x.pass) { state = '✕ απέτυχε'; cls = 'bad-txt'; } else {
+        const m = margin(x);
+        state = m > 0.8 ? `! οριακά (${(m * 100).toFixed(0)}% προς το όριο)` : '✓ πέρασε';
+        cls = m > 0.8 ? 'warn-txt' : 'ok-txt';
+      }
+      tr.append(
+        el('td', 'mono small', `TID ${x.tid}${x.known ? '' : ' (ωμή τιμή)'}`),
+        el('td', 'mono', dec(x.value) + u),
+        el('td', 'mono small', x.bounded ? `${dec(x.min)} – ${dec(x.max)}${u}` : '—'),
+        el('td', 'small ' + cls, state),
+      );
+      t.append(tr);
+    }
+    card.append(t);
+    box.append(card);
+  }
+  box.append(el('p', 'muted small',
+    'Το «πέρασε/απέτυχε» βγαίνει από τη σύγκριση με τα όρια της ίδιας της ECU και είναι ανεξάρτητο '
+    + 'της κλίμακας. Όπου το UASID δεν είναι γνωστό, δείχνουμε την ωμή τιμή αντί να μαντέψουμε μονάδα.'));
+}
+
+async function runM06() {
+  if (!S.elm) return banner('Σύνδεσε πρώτα.', true);
+  if (S.m06run?.running) return;
+  if (S.live) { S.live = false; await new Promise((r) => setTimeout(r, 400)); }
+  S.m06run = { running: true, stop: false };
+  $('btn-m06').disabled = true;
+  $('btn-m06-stop').hidden = false;
+  $('m06-progress').hidden = false;
+  try {
+    const { groups } = await readMode06(S.elm, {
+      stop: () => S.m06run.stop,
+      onProgress: ({ done, total, mid, phase }) => {
+        $('m06-progress').querySelector('i').style.width = (total ? (done / total) * 100 : 0).toFixed(0) + '%';
+        $('m06-status').textContent = phase === 'done'
+          ? `Τέλος · ${total} monitors` : `${done}/${total} · MID ${mid}`;
+      },
+    });
+    S.m06 = groups;
+    renderM06(groups);
+  } catch (e) {
+    log('!', e.message);
+    banner('Αποτυχία Mode 06: ' + e.message, true);
+  } finally {
+    S.m06run.running = false;
+    $('btn-m06').disabled = !S.elm;
+    $('btn-m06-stop').hidden = true;
+  }
+}
+
+// ------------------------------------------------------------------ readiness / drive cycle
+async function runReadiness() {
+  const box = $('readiness-out');
+  box.replaceChildren(el('p', 'muted', 'Ανάγνωση…'));
+  const status = S.elm ? await S.elm.readStatus() : S.diag?.status;
+  const plan = readinessPlan(status);
+  box.replaceChildren();
+  if (!plan) return box.append(el('p', 'empty', 'Η ECU δεν έδωσε κατάσταση monitors.'));
+
+  const verdict = el('p', '');
+  verdict.append(el('span', `pill ${plan.mil ? 'bad' : plan.ready ? 'ok' : 'warn'}`,
+    plan.mil ? 'Απόρριψη' : plan.ready ? 'Έτοιμο' : 'Μη έτοιμο'), ' ' + plan.verdict);
+  box.append(verdict);
+  box.append(el('p', 'muted small', `Ολοκληρωμένα ${plan.done.length} από ${plan.total}.`));
+
+  if (plan.todo.length) {
+    box.append(el('h3', '', 'Τι λείπει και τι οδήγηση θέλει'));
+    const ul = el('ul', 'rep');
+    for (const m of plan.todo) {
+      const li = el('li');
+      li.append(el('span', 'area', m.name));
+      const d = el('div');
+      d.append(el('div', 'title', m.what), el('div', 'detail', m.how));
+      li.append(d);
+      ul.append(li);
+    }
+    box.append(ul);
+  }
+  if (plan.done.length) {
+    box.append(el('p', 'muted small', 'Ολοκληρωμένα: ' + plan.done.map((m) => m.name).join(' · ')));
+  }
+  box.append(el('p', 'muted small',
+    'Το ακριβές drive cycle διαφέρει ανά κατασκευαστή — οι οδηγίες είναι η γενική λογική του OBD-II.'));
+}
+
+// ------------------------------------------------------------------ εκτύπωση / PDF
+function printReport() {
+  if (!S.report && !S.diag && !S.m06) {
+    return banner('Δεν υπάρχει τίποτα να εκτυπωθεί — βγάλε αναφορά ή διάβασε κωδικούς πρώτα.', true);
+  }
+  document.body.dataset.printing = '1';
+  const stamp = new Date().toLocaleString('el-GR');
+  $('print-meta').textContent = `${stamp}${S.vin ? ' · VIN ' + S.vin : ''}`
+    + `${S.elm?.info?.protocol ? ' · ' + S.elm.info.protocol : ''}`;
+  // Το onafterprint μπορεί να μην πυροδοτηθεί σε κάθε browser — καθάρισε και με timeout.
+  const clean = () => { delete document.body.dataset.printing; };
+  window.addEventListener('afterprint', clean, { once: true });
+  setTimeout(clean, 60000);
+  window.print();
 }
 
 // ------------------------------------------------------------------ σάρωση μονάδων (ECU)
@@ -781,7 +924,7 @@ function liveSystem() {
   const diag = S.diag || {};
   const base = AI.buildBaseline({
     info: S.elm?.info, vin: S.vin,
-    dtcs: diag.dtcs, status: diag.status, freeze: diag.freeze, ecus: S.ecus,
+    dtcs: diag.dtcs, status: diag.status, freeze: diag.freeze, ecus: S.ecus, m06: S.m06,
     report: S.report || (S.cur?.rows?.length ? buildReport(S.cur) : null),
   });
   return AI.SYSTEM_LIVE + '\n\n# Βάση συνεδρίας\n' + base;
@@ -1020,6 +1163,11 @@ function init() {
   }
   $('btn-scan').onclick = runScan;
   $('btn-scan-stop').onclick = () => { if (S.scan) S.scan.stop = true; };
+  $('btn-m06').onclick = () => runM06().catch((e) => log('!', e.message));
+  $('btn-m06-stop').onclick = () => { if (S.m06run) S.m06run.stop = true; };
+  $('m06-unbounded').onchange = () => { if (S.m06) renderM06(S.m06); };
+  $('btn-readiness').onclick = () => runReadiness().catch((e) => log('!', e.message));
+  $('btn-print').onclick = printReport;
   $('btn-rec').onclick = () => toggleRecording().catch((e) => log('!', e.message));
   $('btn-export').onclick = exportCurrent;
   $('btn-dtc').onclick = () => readDtcs().catch((e) => log('!', e.message));

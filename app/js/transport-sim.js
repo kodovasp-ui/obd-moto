@@ -15,6 +15,25 @@ const SUPPORTED_01 = [
   '61', '62', '63', '66', '67', '68', '78', '7C',
 ];
 const SUPPORTED_02 = ['02', '04', '05', '06', '07', '0B', '0C', '0D', '0E', '0F', '11'];
+
+// Mode 06 — on-board tests. Κάθε εγγραφή: [TID, UASID, τιμή, min, max].
+// Οι τιμές είναι στην ωμή μορφή που στέλνει η ECU (πριν τον πολλαπλασιαστή).
+// Τα bitmap 20/40/60/80/A0 είναι η «αλυσίδα» συνέχειας ως το A1.
+const SUPPORTED_06 = ['01', '20', '21', '31', '40', '60', '80', 'A0', 'A1', 'A2'];
+const TESTS_06 = {
+  '01': [            // Αισθητήρας λάμδα B1S1
+    [0x01, 0x0c, 45, 40, 50],    // τάση μετάβασης πλούσιο→φτωχό, 0.01 V
+    [0x05, 0x10, 120, 0, 200],   // χρόνος απόκρισης, ms
+    [0x07, 0x3d, 1234, 0, 5000], // άγνωστο UASID → δείχνεται ωμό
+  ],
+  21: [[0x01, 0x0f, 120, 50, 200]],            // ρεύμα θέρμανσης, 0.01 A
+  31: [                                         // Καταλύτης Bank 1
+    [0x80, 0x24, 920, 0, 1000],                 // περνά, αλλά οριακά
+    [0x81, 0x03, 105, 0, 75],                   // ΑΠΟΤΥΓΧΑΝΕΙ
+  ],
+  A1: [[0x0b, 0x24, 3, 0, 200]],                // misfire γενικά
+  A2: [[0x0b, 0x24, 1, 0, 200]],                // misfire κυλίνδρου 1
+};
 const VIN = 'SIMDEMO0000000001';
 
 // Μονάδες του «οχήματος» για δοκιμή της σάρωσης. dtc = [b0, b1, failureType, status].
@@ -146,7 +165,9 @@ export class SimTransport {
   pid(pid, s) {
     const tr = (v) => (v + 100) * 1.28;
     switch (pid) {
-      case '01': return this.cleared ? bytes(0x00, 0x07, 0x65, 0x65) : bytes(0x81, 0x07, 0x65, 0x00);
+      // MIL, πλήθος κωδικών, υποστηριζόμενα monitors, ποια είναι ΜΗ ολοκληρωμένα.
+      // Μετά το σβήσιμο μηδενίζουν όλα· αλλιώς καταλύτης και λάμδα μένουν εκκρεμείς.
+      case '01': return this.cleared ? bytes(0x00, 0x07, 0x65, 0x65) : bytes(0x81, 0x07, 0x65, 0x21);
       case '03': return bytes(coolantLoop(s), 0);
       case '04': return bytes(s.load * 2.55);
       case '05': return bytes(s.coolant + 40);
@@ -255,7 +276,17 @@ export class SimTransport {
     }
     if (c === '0906') return '49 06 01 12 34 56 78';
     if (mode === '09') return 'NO DATA';
-    if (mode === '06') return 'NO DATA';
+    if (mode === '06') {
+      if (['00', '20', '40', '60', '80', 'A0'].includes(pid)) {
+        return bytes(0x46, parseInt(pid, 16), ...bitmap(SUPPORTED_06, parseInt(pid, 16)));
+      }
+      const t = TESTS_06[pid];
+      if (!t) return 'NO DATA';
+      // 46 + εγγραφές 9 bytes: MID TID UASID τιμή(2) min(2) max(2)
+      return bytes(0x46, ...t.flatMap(([tid, uas, v, lo, hi]) => [
+        parseInt(pid, 16), tid, uas, ...w16(v), ...w16(lo), ...w16(hi),
+      ]));
+    }
     if (mode === '22') {
       const did = c.slice(2, 6);
       if (did === 'F190') {

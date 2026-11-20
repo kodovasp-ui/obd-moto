@@ -2,6 +2,7 @@
 // Το κλειδί API μένει μόνο σε αυτή τη συσκευή· τα δεδομένα στέλνονται μόνο στο api.anthropic.com
 // όταν ο χρήστης πατήσει «Ανάλυση». Το SDK φορτώνεται από CDN μόνο τότε (χρειάζεται δίκτυο ούτως ή άλλως).
 import { PIDS } from './pids.js';
+import { margin } from './mode06.js';
 import { lookup } from './dtc-kb.js';
 
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.4.0/+esm';
@@ -82,7 +83,24 @@ function ecuSection(ecus) {
   return `## Μονάδες οχήματος (σάρωση UDS 19 02)\n${lines.join('\n')}`;
 }
 
-export function buildContext({ info, vin, session, dtcs, status, freeze, report, symptoms, ecus }) {
+/** On-board tests: δίνουμε στο μοντέλο τα απέτυχαν και τα οριακά, όχι όλα τα τεστ. */
+function m06Section(groups) {
+  if (!groups?.length) return null;
+  const lines = [];
+  for (const g of groups) {
+    for (const t of g.tests) {
+      if (!t.bounded) continue;
+      const m = margin(t) ?? 0;
+      if (t.pass && m <= 0.8) continue; // ομαλό, δεν το στέλνουμε
+      lines.push(`${g.name} TID ${t.tid}: ${t.value}${t.unit ? ' ' + t.unit : ''} `
+        + `(όρια ${t.min}–${t.max}) → ${t.pass ? `πέρασε οριακά, ${(m * 100).toFixed(0)}% προς το όριο` : 'ΑΠΕΤΥΧΕ'}`);
+    }
+  }
+  if (!lines.length) return '## On-board tests (Mode 06)\nΌλα τα τεστ πέρασαν με άνεση.';
+  return `## On-board tests (Mode 06) — απέτυχαν ή οριακά\n${lines.join('\n')}`;
+}
+
+export function buildContext({ info, vin, session, dtcs, status, freeze, report, symptoms, ecus, m06 }) {
   const out = [];
   out.push(`## Όχημα\nVIN: ${vin || '—'}\nΠρωτόκολλο: ${info?.protocol || '—'}\nAdapter: ${info?.elm || '—'}`);
   if (symptoms?.trim()) out.push(`## Συμπτώματα (από τον αναβάτη)\n${symptoms.trim()}`);
@@ -95,6 +113,8 @@ export function buildContext({ info, vin, session, dtcs, status, freeze, report,
   }
   const ecuTxt = ecuSection(ecus);
   if (ecuTxt) out.push(ecuTxt);
+  const m06Txt = m06Section(m06);
+  if (m06Txt) out.push(m06Txt);
   if (freeze?.code) {
     out.push(`## Freeze frame (αιτία ${freeze.code})\n${freeze.values.map(([p, v]) => `${PIDS[p]?.name || p}: ${v == null ? '—' : v.toFixed(2)} ${PIDS[p]?.unit || ''}`).join('\n')}`);
   }
@@ -141,7 +161,7 @@ export async function diagnose({ apiKey, context, onText, signal }) {
 }
 
 /** Στατική «βάση» για live mode: όχημα, κωδικοί, freeze, αναφορά υγείας — χωρίς τα live stats. */
-export function buildBaseline({ info, vin, dtcs, status, freeze, report, ecus }) {
+export function buildBaseline({ info, vin, dtcs, status, freeze, report, ecus, m06 }) {
   const out = [];
   out.push(`## Όχημα\nVIN: ${vin || '—'}\nΠρωτόκολλο: ${info?.protocol || '—'}\nAdapter: ${info?.elm || '—'}`);
   if (status) {
@@ -156,6 +176,8 @@ export function buildBaseline({ info, vin, dtcs, status, freeze, report, ecus })
   }
   const ecuTxt = ecuSection(ecus);
   if (ecuTxt) out.push(ecuTxt);
+  const m06Txt = m06Section(m06);
+  if (m06Txt) out.push(m06Txt);
   if (report) {
     out.push(`## Αυτόματη αναφορά υγείας\n${report.items.map((i) => `[${i.status}] ${i.area}: ${i.title} — ${i.detail}`).join('\n')}`);
   }
