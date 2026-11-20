@@ -11,8 +11,9 @@ export const AT_PATTERNS = [
   'Z', 'WS', 'D', 'I', '@1', 'RV', 'DP', 'DPN', 'PC',
   'E[01]', 'L[01]', 'S[01]', 'H[01]', 'M0', 'AT[012]',
   'ST[0-9A-F]{2}', 'SP[0-9A-C]', 'SPA[0-9A-C]', 'TP[0-9A-C]',
-  'CAF[01]', 'CFC[01]', 'SH[0-9A-F]{3}', 'SH[0-9A-F]{6}',
-  'CRA[0-9A-F]{3}', 'CRA', 'FCSH[0-9A-F]{3}', 'FCSD[0-9A-F]{2,10}', 'FCSM[012]',
+  'CAF[01]', 'CFC[01]', 'SH[0-9A-F]{3}', 'SH[0-9A-F]{6}', 'SH[0-9A-F]{8}',
+  'CRA[0-9A-F]{3}', 'CRA[0-9A-F]{8}', 'CRA', 'FCSH[0-9A-F]{3}', 'FCSH[0-9A-F]{8}',
+  'FCSD[0-9A-F]{2,10}', 'FCSM[012]',
   'CF[0-9A-F]{3}', 'CM[0-9A-F]{3}',
 ];
 // --- SAFETY-RULES-END

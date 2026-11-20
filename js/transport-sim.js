@@ -16,6 +16,41 @@ const SUPPORTED_01 = [
 ];
 const SUPPORTED_02 = ['02', '04', '05', '06', '07', '0B', '0C', '0D', '0E', '0F', '11'];
 const VIN = 'SIMDEMO0000000001';
+
+// Μονάδες του «οχήματος» για δοκιμή της σάρωσης. dtc = [b0, b1, failureType, status].
+// Status: 0x08 επιβεβαιωμένος, 0x04 εκκρεμής, 0x89 επιβεβαιωμένος + ζητά λυχνία.
+const SIM_ECUS = {
+  '7E0': {
+    resp: '7E8', engine: true, name: 'ECM-MSE60',
+    ids: { F197: 'ECM-MSE60', F18C: 'SN7E0-00042', F187: '0261S23451' },
+    dtcs: [[0x00, 0x53, 0x00, 0x89], [0x01, 0x31, 0x1a, 0x04]], // P0053-00, P0131-1A
+  },
+  '7E1': {
+    resp: '7E9', name: 'TCM-SIM',
+    ids: { F197: 'TCM-SIM', F18C: 'SN7E1-00013', F187: '0260S55512' },
+    dtcs: [],
+  },
+  714: {
+    resp: '71C', name: 'ABS-SIM',
+    ids: { F197: 'ABS-SIM', F18C: 'SNABS-00777', F187: '0265S41200' },
+    dtcs: [[0x50, 0x95, 0x08, 0x08]], // C1095-08
+  },
+  715: {
+    resp: '71D', name: 'SRS-SIM',
+    ids: { F197: 'SRS-SIM', F18C: 'SNSRS-00901', F187: '0285S10033' },
+    dtcs: [],
+  },
+  720: {
+    resp: '728', name: 'IPC-SIM',
+    ids: { F197: 'IPC-SIM', F18C: 'SNIPC-00120', F187: '0263S70901' },
+    dtcs: [[0xc1, 0x01, 0x00, 0x08]], // U0101-00
+  },
+  '18DA10F1': {
+    resp: '18DAF110', engine: true, name: 'ECM-MSE60',
+    ids: { F197: 'ECM-MSE60', F18C: 'SN7E0-00042', F187: '0261S23451' },
+    dtcs: [[0x00, 0x53, 0x00, 0x89]],
+  },
+};
 const STORED = [0x05, 0x62]; // P0562 τάση συστήματος χαμηλή (demo)
 const PENDING = [0x01, 0x31]; // P0131 λάμδα B1S1 χαμηλή τάση (demo)
 
@@ -41,6 +76,7 @@ export class SimTransport {
     this.t0 = performance.now();
     this.headers = false;
     this.cleared = false;
+    this.hdr = '7DF'; // τρέχον ATSH
   }
 
   static isSupported() { return true; }
@@ -49,8 +85,19 @@ export class SimTransport {
 
   async write(text) {
     const c = text.replace(/\s/g, '').toUpperCase();
-    const reply = this.respond(c);
+    let reply = this.respond(c);
+    // Με ATH1 ο ELM327 προθέτει το CAN ID του αποστολέα σε κάθε γραμμή.
+    if (this.headers && !c.startsWith('AT')) {
+      const id = this.target()?.resp;
+      if (id) reply = reply.split('\r').map((l) => (l.trim() ? `${id} ${l.trim()}` : l)).join('\r');
+    }
     setTimeout(() => this.onData(reply + '\r\r>'), 25 + Math.random() * 30);
+  }
+
+  /** Σε ποια μονάδα απευθύνεται το τρέχον ATSH. */
+  target() {
+    if (this.hdr === '7DF') return SIM_ECUS['7E0']; // functional broadcast → απαντά ο κινητήρας
+    return SIM_ECUS[this.hdr] || null;
   }
 
   // Κατάσταση κινητήρα: ρελαντί που ζεσταίνεται, με περιοδικό «γκάζι» στις ~2500.
@@ -73,6 +120,27 @@ export class SimTransport {
       egt: Math.min(430, 25 + t * 7.5),
       fuelRate: rev ? 2.9 : 0.9 + Math.random() * 0.1,
     };
+  }
+
+  /** UDS μόνο-ανάγνωσης: 10 01, 19 02 (κωδικοί), 22 (ταυτότητα). null = δεν το χειρίζομαι. */
+  uds(c, ecu) {
+    if (c === '1001') return '50 01 00 32 01 F4';
+    if (c.startsWith('1902')) {
+      if (!ecu.dtcs.length) return bytes(0x59, 0x02, 0xff);
+      return bytes(0x59, 0x02, 0xff, ...ecu.dtcs.flat());
+    }
+    if (c.startsWith('19')) return '7F 19 12'; // subFunctionNotSupported
+    if (c.startsWith('22')) {
+      const did = c.slice(2, 6);
+      const val = ecu.ids[did];
+      if (val) {
+        return bytes(0x62, parseInt(did.slice(0, 2), 16), parseInt(did.slice(2), 16),
+          [...val].map((ch) => ch.charCodeAt(0)));
+      }
+      if (!ecu.engine) return '7F 22 31'; // requestOutOfRange
+      return null; // ο κινητήρας έχει κι άλλα DID πιο κάτω
+    }
+    return null;
   }
 
   pid(pid, s) {
@@ -144,9 +212,18 @@ export class SimTransport {
       if (a === 'DP') return 'AUTO, ISO 15765-4 (CAN 11/500)';
       if (a === 'DPN') return 'A6';
       if (a === '@1') return 'SIMULATOR';
+      if (a.startsWith('SH')) { this.hdr = a.slice(2); return 'OK'; }
       if (a.startsWith('H')) this.headers = a === 'H1';
       return 'OK';
     }
+
+    // --- μονάδες πέρα από τον κινητήρα: μόνο UDS (10 01, 19 02, 22) όπως στην πραγματικότητα
+    const ecu = this.target();
+    if (!ecu) return 'NO DATA';
+    if (!ecu.engine) return this.uds(c, ecu) ?? 'NO DATA';
+    const udsReply = this.uds(c, ecu);
+    if (udsReply) return udsReply;
+
     const s = this.state();
     const mode = c.slice(0, 2);
     const pid = c.slice(2, 4);
@@ -179,7 +256,6 @@ export class SimTransport {
     if (c === '0906') return '49 06 01 12 34 56 78';
     if (mode === '09') return 'NO DATA';
     if (mode === '06') return 'NO DATA';
-    if (c === '1001') return '50 01 00 32 01 F4';
     if (mode === '22') {
       const did = c.slice(2, 6);
       if (did === 'F190') {

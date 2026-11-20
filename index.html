@@ -34,6 +34,7 @@
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="live" aria-selected="true">Live</button>
     <button role="tab" data-tab="dtc">Κωδικοί</button>
+    <button role="tab" data-tab="scan">Σάρωση</button>
     <button role="tab" data-tab="health">Υγεία</button>
     <button role="tab" data-tab="history">Ιστορικό</button>
     <button role="tab" data-tab="ai">Βοηθός</button>
@@ -93,6 +94,29 @@
         </form>
         <div id="kb-out"></div>
       </div>
+    </section>
+
+    <!-- ΣΑΡΩΣΗ ΜΟΝΑΔΩΝ -->
+    <section id="tab-scan" class="tab" hidden>
+      <div class="card">
+        <h2>Σάρωση όλων των μονάδων</h2>
+        <p class="muted small">Ρωτά κάθε διεύθυνση του διαύλου «υπάρχει μονάδα εδώ;» (UDS <code>10 01</code>)
+          και, για όσες απαντήσουν, διαβάζει κωδικούς (<code>19 02</code>) και ταυτότητα (<code>22</code>).
+          Έτσι βλέπεις ABS, airbag, σασμάν, immobilizer — όχι μόνο τον κινητήρα.
+          <b>Μόνο ανάγνωση.</b> Με το κλειδί στο ON και τον κινητήρα σβηστό.</p>
+        <div class="toolbar">
+          <select id="scan-mode" aria-label="Εύρος σάρωσης"></select>
+          <button id="btn-scan" class="primary" disabled>Έναρξη σάρωσης</button>
+          <button id="btn-scan-stop" class="ghost" hidden>Διακοπή</button>
+        </div>
+        <div class="toolbar">
+          <label class="small"><input type="checkbox" id="scan-dtcs" checked> Κωδικοί βλάβης</label>
+          <label class="small"><input type="checkbox" id="scan-ids" checked> Ταυτότητα μονάδας</label>
+        </div>
+        <div id="scan-progress" class="bar" hidden><i></i></div>
+        <p class="muted small mono" id="scan-status"></p>
+      </div>
+      <div id="scan-out"><p class="empty">Δεν έχει γίνει σάρωση.</p></div>
     </section>
 
     <!-- ΥΓΕΙΑ -->

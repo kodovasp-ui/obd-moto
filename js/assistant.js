@@ -71,7 +71,18 @@ const stat = (rows, k) => {
 };
 
 /** Συγκεντρώνει τα διαθέσιμα δεδομένα σε κείμενο για το μοντέλο. */
-export function buildContext({ info, vin, session, dtcs, status, freeze, report, symptoms }) {
+/** Σύνοψη σάρωσης μονάδων: ποιες απάντησαν και τι κωδικούς έχει καθεμιά. */
+function ecuSection(ecus) {
+  if (!ecus?.length) return null;
+  const lines = ecus.map((e) => {
+    const who = e.name || e.hint || e.req;
+    const codes = e.dtcs.length ? e.dtcs.map((d) => `${d.code}-${d.ftb}`).join(', ') : 'χωρίς κωδικούς';
+    return `${who} (${e.req}): ${codes}`;
+  });
+  return `## Μονάδες οχήματος (σάρωση UDS 19 02)\n${lines.join('\n')}`;
+}
+
+export function buildContext({ info, vin, session, dtcs, status, freeze, report, symptoms, ecus }) {
   const out = [];
   out.push(`## Όχημα\nVIN: ${vin || '—'}\nΠρωτόκολλο: ${info?.protocol || '—'}\nAdapter: ${info?.elm || '—'}`);
   if (symptoms?.trim()) out.push(`## Συμπτώματα (από τον αναβάτη)\n${symptoms.trim()}`);
@@ -82,6 +93,8 @@ export function buildContext({ info, vin, session, dtcs, status, freeze, report,
     const fmt = (a) => (a?.length ? a.map((c) => `${c} (${lookup(c).t})`).join('; ') : 'κανένας');
     out.push(`## Κωδικοί\nΑποθηκευμένοι (03): ${fmt(dtcs.stored)}\nΕκκρεμείς (07): ${fmt(dtcs.pending)}\nΜόνιμοι (0A): ${fmt(dtcs.permanent)}`);
   }
+  const ecuTxt = ecuSection(ecus);
+  if (ecuTxt) out.push(ecuTxt);
   if (freeze?.code) {
     out.push(`## Freeze frame (αιτία ${freeze.code})\n${freeze.values.map(([p, v]) => `${PIDS[p]?.name || p}: ${v == null ? '—' : v.toFixed(2)} ${PIDS[p]?.unit || ''}`).join('\n')}`);
   }
@@ -128,7 +141,7 @@ export async function diagnose({ apiKey, context, onText, signal }) {
 }
 
 /** Στατική «βάση» για live mode: όχημα, κωδικοί, freeze, αναφορά υγείας — χωρίς τα live stats. */
-export function buildBaseline({ info, vin, dtcs, status, freeze, report }) {
+export function buildBaseline({ info, vin, dtcs, status, freeze, report, ecus }) {
   const out = [];
   out.push(`## Όχημα\nVIN: ${vin || '—'}\nΠρωτόκολλο: ${info?.protocol || '—'}\nAdapter: ${info?.elm || '—'}`);
   if (status) {
@@ -141,6 +154,8 @@ export function buildBaseline({ info, vin, dtcs, status, freeze, report }) {
   if (freeze?.code) {
     out.push(`## Freeze frame (αιτία ${freeze.code})\n${freeze.values.map(([p, v]) => `${PIDS[p]?.name || p}: ${v == null ? '—' : v.toFixed(2)} ${PIDS[p]?.unit || ''}`).join('\n')}`);
   }
+  const ecuTxt = ecuSection(ecus);
+  if (ecuTxt) out.push(ecuTxt);
   if (report) {
     out.push(`## Αυτόματη αναφορά υγείας\n${report.items.map((i) => `[${i.status}] ${i.area}: ${i.title} — ${i.detail}`).join('\n')}`);
   }
