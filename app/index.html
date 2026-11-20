@@ -44,6 +44,7 @@
     <button role="tab" data-tab="dtc">Κωδικοί</button>
     <button role="tab" data-tab="scan">Σάρωση</button>
     <button role="tab" data-tab="health">Υγεία</button>
+    <button role="tab" data-tab="trip">Ταξίδι</button>
     <button role="tab" data-tab="history">Ιστορικό</button>
     <button role="tab" data-tab="ai">Βοηθός</button>
     <button role="tab" data-tab="ecu">ECU</button>
@@ -72,6 +73,22 @@
         <button id="rp-exit" class="ghost">Έξοδος</button>
         <span id="rp-title" class="muted small"></span>
       </div>
+      <div class="toolbar" id="preset-bar" hidden>
+        <span class="muted small">Έτοιμα σετ:</span>
+      </div>
+      <details class="card" id="alerts-card">
+        <summary><b>Ειδοποιήσεις</b> <span class="muted small" id="alerts-sum"></span></summary>
+        <p class="muted small">Ελέγχονται οι live τιμές και σε προειδοποιεί. Μόνο ενημερωτικό — καμία ενέργεια στην ECU.
+          Τα όρια είναι <b>γενικά</b>· προσάρμοσέ τα με βάση το εγχειρίδιο σέρβις του οχήματός σου.</p>
+        <div class="toolbar">
+          <label class="small"><input type="checkbox" id="alerts-on"> Ενεργές</label>
+          <label class="small"><input type="checkbox" id="alerts-sound"> Ήχος</label>
+          <button id="alerts-reset" class="ghost">Επαναφορά ορίων</button>
+          <button id="alerts-test" class="ghost">Δοκιμή ήχου</button>
+        </div>
+        <div id="alerts-rules"></div>
+        <div id="alerts-log"></div>
+      </details>
       <p class="muted small">Πάτα σε μια κάρτα για να εμφανιστεί/κρυφτεί το γράφημά της.</p>
       <div class="tiles" id="tiles"><p class="empty">Σύνδεσου, πάτα Demo ή άνοιξε μια συνεδρία από το Ιστορικό.</p></div>
       <div class="charts" id="charts"></div>
@@ -231,6 +248,53 @@
     <!-- ΟΧΗΜΑ -->
     <section id="tab-info" class="tab" hidden>
       <dl class="kv" id="info-out"><p class="empty">Σύνδεσου για στοιχεία οχήματος.</p></dl>
+
+      <div class="card">
+        <h2>Γκαράζ</h2>
+        <p class="muted small">Κάθε όχημα που συνδέεις καταγράφεται με το VIN του (ή, αν δεν δίνει VIN,
+          με το πρωτόκολλο και τα PID του). Το ταμπλό και οι ρυθμίσεις θυμούνται ανά όχημα.</p>
+        <div id="garage-out"></div>
+      </div>
+
+      <div class="card">
+        <h2>Ρυθμίσεις</h2>
+        <div class="toolbar">
+          <label class="small">Μονάδες:
+            <select id="units-sel" aria-label="Σύστημα μονάδων">
+              <option value="metric">Μετρικό (°C, km/h, kPa, L)</option>
+              <option value="imperial">Imperial (°F, mph, psi, gal)</option>
+            </select>
+          </label>
+        </div>
+        <p class="muted small">Η μετατροπή αφορά μόνο την εμφάνιση. Οι αποθηκευμένες συνεδρίες, το CSV
+          και ό,τι στέλνεται στον Βοηθό μένουν <b>πάντα μετρικά</b>, ώστε να συγκρίνονται μεταξύ τους.</p>
+      </div>
+    </section>
+
+    <!-- ΤΑΞΙΔΙ -->
+    <section id="tab-trip" class="tab" hidden>
+      <div class="card">
+        <h2>Υπολογιστής ταξιδιού</h2>
+        <p class="muted small">Υπολογίζεται από την τρέχουσα καταγραφή: απόσταση με ολοκλήρωση της ταχύτητας,
+          καύσιμο από το PID <code>5E</code> (L/h) της ECU. Αν το όχημα δεν το δίνει, γίνεται
+          <b>εκτίμηση</b> από το MAF — δηλώνεται όταν συμβαίνει.</p>
+        <div class="toolbar">
+          <button id="btn-trip" class="primary">Υπολογισμός</button>
+          <label class="small">Τιμή καυσίμου (€/L):
+            <input id="fuel-price" type="number" step="0.001" min="0" value="1.75" style="max-width:110px">
+          </label>
+        </div>
+        <div id="trip-out"><p class="empty">Ξεκίνα Live (ή άνοιξε συνεδρία από το Ιστορικό) και πάτα Υπολογισμός.</p></div>
+      </div>
+
+      <div class="card">
+        <h2>Επιδόσεις</h2>
+        <p class="muted small">Ανιχνεύονται από την καταγραφή, όχι από χρονόμετρο: ψάχνει εκκινήσεις από στάση
+          (≤ 2 km/h). Η ακρίβεια εξαρτάται από τον ρυθμό δειγματοληψίας του adapter —
+          με ~5 δείγματα/s το σφάλμα είναι μερικά δέκατα.
+          <b>Μόνο σε κλειστή πίστα, όχι στον δρόμο.</b></p>
+        <div id="perf-out"><p class="empty">Πάτα Υπολογισμός πιο πάνω.</p></div>
+      </div>
     </section>
 
     <!-- ΚΟΝΣΟΛΑ -->

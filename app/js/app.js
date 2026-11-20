@@ -17,6 +17,10 @@ import { ECU_DB, REFERENCE, ECU_DIDS } from './ecu-db.js';
 import { scanEcus, ecuLabel, SCAN_MODES } from './ecu-scan.js';
 import { readMode06, summarize, margin } from './mode06.js';
 import { readinessPlan } from './readiness.js';
+import * as U from './units.js';
+import * as G from './garage.js';
+import * as AL from './alerts.js';
+import { tripSummary, sprint, standingDistance, tripCost } from './trip.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -42,7 +46,19 @@ const S = {
   chatLive: { on: false, busy: false, timer: null, abort: null, msgs: [] },
   ecus: null, scan: null, // σάρωση μονάδων
   m06: null, m06run: null, // on-board tests (Mode 06)
+  vehicle: null, // ενεργό προφίλ γκαράζ
 };
+
+// Προκαθορισμένα σετ PID. Εμφανίζονται μόνο όσα υποστηρίζει το όχημα.
+const PRESETS = [
+  ['Βασικά', ['0C', '05', '0F', '04', '11', '0B', '06', '07', '14', '0D', '42']],
+  ['Μείγμα / λάμδα', ['06', '07', '08', '09', '14', '15', '24', '44', '0B', '10', '2F']],
+  ['Θερμοκρασίες', ['05', '0F', '5C', '46', '3C', '78', '7C', '77']],
+  ['Υπερπλήρωση', ['70', '73', '74', '0B', '33', '77', '04', '10']],
+  ['Diesel / DPF', ['7C', '7A', '78', '83', '2C', '2D', '6B', '5E', '23']],
+  ['Υβριδικό / EV', ['5B', '9A', 'B2', '42', '0D', '46']],
+  ['Κιβώτιο / ροπή', ['A4', '0D', '0C', '61', '62', '63', '5C']],
+];
 
 // ------------------------------------------------------------------ log / banner / status
 function log(dir, text) {
@@ -87,6 +103,13 @@ async function connect(kind) {
     S.vin = await S.elm.readVin();
     loadPidSel();
     renderPidSummary();
+    renderPresets();
+    S.vehicle = G.touchVehicle({
+      vin: S.vin, protocol: info.protocol, protocolNum: info.protocolNum,
+      supported: S.supported, elm: info.elm,
+    });
+    renderGarage();
+    AL.resetFired();
     exitReplay();
     S.cur = newSession({ vin: S.vin, source: kind === 'sim' ? 'demo' : 'ble', pids: livePids() });
     setConnected(true);
@@ -109,9 +132,12 @@ function cleanup(msg) {
   S.transport = null;
   S.supported = [];
   S.pidSel = null;
+  S.vehicle = null;
   if (S.scan) S.scan.stop = true;
   $('pid-summary').textContent = '';
   $('pid-status').replaceChildren();
+  $('preset-bar').hidden = true;
+  renderGarage();
   setConnected(false);
   setStatus('Αποσυνδεδεμένο');
   $('btn-live').textContent = 'Έναρξη';
@@ -246,7 +272,7 @@ function buildDashboard(pids) {
     tile.dataset.key = key;
     tile.setAttribute('aria-pressed', S.chartKeys.includes(key));
     const head = el('div');
-    head.append(el('span', 'val', '—'), el('span', 'unit', meta.unit));
+    head.append(el('span', 'val', '—'), el('span', 'unit', U.unitLabel(meta.unit)));
     const bar = el('div', 'bar');
     bar.append(el('i'));
     tile.append(el('div', 'name', `${meta.name}${key === 'RV' ? '' : ' · ' + key}`), head, bar);
@@ -281,7 +307,9 @@ function setTile(key, v) {
   const tile = $('tiles').querySelector(`[data-key="${key}"]`);
   if (!tile) return;
   const meta = SERIES_META(key);
-  tile.querySelector('.val').textContent = v == null ? '—' : v.toFixed(meta.dec ?? 1);
+  // Οι τιμές αποθηκεύονται μετρικές· μετατρέπονται μόνο για την εμφάνιση.
+  const d = U.display(v, meta.unit, meta.dec ?? 1);
+  tile.querySelector('.val').textContent = d.v == null ? '—' : d.v.toFixed(d.dec);
   if (v != null && meta.max != null) {
     const p = Math.max(0, Math.min(1, (v - (meta.min ?? 0)) / (meta.max - (meta.min ?? 0))));
     tile.querySelector('.bar i').style.width = (p * 100).toFixed(0) + '%';
@@ -342,6 +370,7 @@ async function toggleLive() {
       const rv = await S.elm.voltage();
       if (rv != null) row.v.RV = rv;
       setTile('RV', rv);
+      handleAlerts(row);
       S.cur.rows.push(row);
       if (S.cur.rows.length > 20000) S.cur.rows.splice(0, 5000);
       if (S.rec) S.rec.rows.push({ t: row.t - S.rec.tStart, v: row.v });
@@ -685,6 +714,235 @@ async function runAi() {
   } finally {
     $('ai-run').disabled = false; $('ai-stop').hidden = true; S.aiAbort = null;
   }
+}
+
+// ------------------------------------------------------------------ γκαράζ
+function renderGarage() {
+  const box = $('garage-out');
+  box.replaceChildren();
+  const list = G.listVehicles();
+  if (!list.length) return box.append(el('p', 'empty', 'Κανένα όχημα ακόμα — σύνδεσε ένα.'));
+  const ul = el('div', 'hist');
+  for (const v of list) {
+    const active = S.vehicle?.id === v.id;
+    const card = el('div', 'card');
+    const meta = el('div', 'meta');
+    const title = el('div');
+    title.append(el('b', '', G.vehicleLabel(v)));
+    if (active) title.append(' ', el('span', 'pill ok', 'συνδεδεμένο'));
+    meta.append(title);
+    meta.append(el('div', 'muted small mono', v.vin ? `VIN ${v.vin}` : `χωρίς VIN · ${v.id}`));
+    meta.append(el('div', 'muted small',
+      `${v.protocol || '—'} · ${v.pidCount} PID · ${v.visits} συνδέσεις · `
+      + `τελευταία ${new Date(v.lastSeen).toLocaleDateString('el-GR')}`));
+    card.append(meta);
+    const btns = el('div', 'btns');
+    const ren = el('button', 'ghost', 'Μετονομασία');
+    ren.onclick = () => {
+      const n = prompt('Όνομα οχήματος:', v.name || '');
+      if (n !== null) { G.renameVehicle(v.id, n); if (active) S.vehicle = G.getVehicle(v.id); renderGarage(); }
+    };
+    const del = el('button', 'danger', 'Διαγραφή');
+    del.onclick = () => {
+      if (!confirm(`Να διαγραφεί «${G.vehicleLabel(v)}» και οι ρυθμίσεις του;`)) return;
+      G.deleteVehicle(v.id);
+      if (active) S.vehicle = null;
+      renderGarage();
+    };
+    btns.append(ren, del);
+    card.append(btns);
+    ul.append(card);
+  }
+  box.append(ul);
+}
+
+// ------------------------------------------------------------------ έτοιμα σετ PID
+function renderPresets() {
+  const bar = $('preset-bar');
+  bar.replaceChildren(el('span', 'muted small', 'Έτοιμα σετ:'));
+  const avail = PRESETS
+    .map(([name, pids]) => [name, pids.filter((p) => S.supported.includes(p) && isNumeric(p))])
+    .filter(([, pids]) => pids.length >= 2);
+  bar.hidden = !avail.length;
+  for (const [name, pids] of avail) {
+    const b = el('button', 'ghost small', `${name} (${pids.length})`);
+    b.onclick = () => {
+      S.pidSel = pids;
+      savePidSel();
+      if (S.cur) S.cur.pids = livePids();
+      buildDashboard(livePids());
+      renderPidSummary();
+    };
+    bar.append(b);
+  }
+}
+
+// ------------------------------------------------------------------ ειδοποιήσεις
+function renderAlertRules() {
+  const box = $('alerts-rules');
+  box.replaceChildren();
+  const t = el('table');
+  const hr = el('tr');
+  hr.append(el('th', '', 'Τιμή'), el('th', '', 'Συνθήκη'), el('th', '', 'Όριο'), el('th', '', 'Ειδοποίηση'));
+  t.append(hr);
+  AL.config.rules.forEach((r, i) => {
+    const tr = el('tr');
+    const meta = SERIES_META(r.key);
+    const d = U.display(r.value, meta.unit, meta.dec ?? 1);
+    const inp = el('input');
+    inp.type = 'number';
+    inp.step = 'any';
+    inp.value = d.v == null ? '' : +d.v.toFixed(d.dec);
+    inp.style.maxWidth = '110px';
+    inp.onchange = () => {
+      const x = parseFloat(inp.value);
+      if (!Number.isFinite(x)) return;
+      // Ο χρήστης γράφει σε μονάδες εμφάνισης — αποθηκεύουμε μετρικά.
+      AL.config.rules[i].value = U.getSystem() === 'metric' ? x : metricFromDisplay(x, meta.unit);
+      AL.saveConfig({ rules: AL.config.rules });
+      renderAlertRules();
+    };
+    tr.append(
+      el('td', 'small', `${meta.name} (${r.key})`),
+      el('td', 'small', r.op === 'gt' ? 'πάνω από' : 'κάτω από'),
+      (() => { const td = el('td'); td.append(inp, el('span', 'muted small', ' ' + d.unit)); return td; })(),
+      el('td', 'small', r.label),
+    );
+    t.append(tr);
+  });
+  box.append(t);
+  $('alerts-sum').textContent = AL.config.enabled
+    ? `${AL.config.rules.length} κανόνες ενεργοί${AL.config.sound ? ' · με ήχο' : ''}`
+    : 'ανενεργές';
+}
+
+/** Αντίστροφη μετατροπή: από μονάδες εμφάνισης σε μετρικά (για τα όρια). */
+function metricFromDisplay(x, unit) {
+  // Βρες τον συντελεστή δοκιμάζοντας δύο σημεία — δουλεύει και για °C/°F.
+  const a = U.conv(0, unit);
+  const b = U.conv(1, unit);
+  const slope = b - a;
+  return slope === 0 ? x : (x - a) / slope;
+}
+
+function alertMsg(a) {
+  const meta = SERIES_META(a.key);
+  const d = U.display(a.actual, meta.unit, meta.dec ?? 1);
+  const lim = U.display(a.value, meta.unit, meta.dec ?? 1);
+  const row = el('p', 'small ' + (a.level === 'bad' ? 'bad-txt' : 'warn-txt'),
+    `${new Date().toLocaleTimeString('el-GR')} — ${a.label}: `
+    + `${d.v.toFixed(d.dec)} ${d.unit} (όριο ${a.op === 'gt' ? '>' : '<'} ${lim.v.toFixed(lim.dec)} ${lim.unit})`);
+  const box = $('alerts-log');
+  box.prepend(row);
+  while (box.childNodes.length > 30) box.lastChild.remove();
+}
+
+function handleAlerts(row) {
+  const hits = AL.check(row);
+  if (!hits.length) return;
+  for (const a of hits) alertMsg(a);
+  const worst = hits.some((a) => a.level === 'bad') ? 'bad' : 'warn';
+  AL.beep(worst);
+  banner('⚠ ' + hits.map((a) => a.label).join(' · '), worst === 'bad');
+  $('alerts-card').open = true;
+}
+
+// ------------------------------------------------------------------ ταξίδι + επιδόσεις
+function tripSession() {
+  return S.replay?.session || S.rec || S.cur;
+}
+
+function runTrip() {
+  const s = tripSession();
+  const rows = s?.rows || [];
+  const box = $('trip-out');
+  const perf = $('perf-out');
+  if (rows.length < 2) {
+    box.replaceChildren(el('p', 'empty', 'Δεν υπάρχουν αρκετά δεδομένα — ξεκίνα Live ή άνοιξε συνεδρία.'));
+    perf.replaceChildren(el('p', 'empty', '—'));
+    return;
+  }
+  const t = tripSummary(rows);
+  box.replaceChildren();
+
+  const hasSpeed = rows.some((r) => r.v['0D'] != null);
+  if (!hasSpeed) {
+    box.append(el('p', 'small warn-txt',
+      'Το όχημα δεν δίνει ταχύτητα (PID 0D) — χωρίς αυτό δεν υπολογίζονται απόσταση και L/100km.'));
+  }
+
+  const dl = el('dl', 'kv');
+  const add = (k, v) => { if (v != null) dl.append(el('dt', '', k), el('dd', '', v)); };
+  const hms = (sec) => {
+    const h = Math.floor(sec / 3600); const m = Math.floor((sec % 3600) / 60); const x = Math.floor(sec % 60);
+    return (h ? `${h} ω ` : '') + (h || m ? `${m} λ ` : '') + `${x} s`;
+  };
+  const dist = U.displayExact(t.distance, 'km', 2);
+  const sp = U.display(t.maxSpeed, 'km/h', 0);
+  const avg = t.avgSpeed == null ? null : U.display(t.avgSpeed, 'km/h', 0);
+  const vol = U.volume(t.fuel);
+  const cons = U.consumption(t.lPer100);
+
+  add('Διάρκεια', hms(t.duration));
+  if (hasSpeed) {
+    add('Απόσταση', `${dist.v.toFixed(dist.dec)} ${dist.unit}`);
+    add('Σε κίνηση / ρελαντί', `${hms(t.moving)} / ${hms(t.idle)}`);
+    add('Μέγιστη ταχύτητα', `${sp.v.toFixed(0)} ${sp.unit}`);
+    if (avg) add('Μέση (σε κίνηση)', `${avg.v.toFixed(0)} ${avg.unit}`);
+  }
+  if (t.maxRpm) add('Μέγιστες στροφές', `${t.maxRpm.toFixed(0)} rpm`);
+  if (t.fuel != null) {
+    add('Καύσιμο', `${vol.v.toFixed(vol.dec)} ${vol.unit}${t.estimated ? ' (εκτίμηση από MAF)' : ''}`);
+    if (cons.v != null) add('Κατανάλωση', `${cons.v.toFixed(cons.dec)} ${cons.unit}`);
+    if (t.idleRate != null) {
+      const ir = U.volume(t.idleRate);
+      add('Στο ρελαντί', `${ir.v.toFixed(2)} ${ir.unit}/h`);
+    }
+    const price = parseFloat($('fuel-price').value);
+    const cost = tripCost(t, price);
+    if (cost) {
+      const per = U.costPerDistance(cost.per100km);
+      add('Κόστος', `${cost.total.toFixed(2)} €`
+        + (per ? ` · ${per.v.toFixed(2)} ${per.label}` : ''));
+    }
+  } else {
+    const canFuel = S.supported.includes('5E') || S.supported.includes('10');
+    box.append(el('p', 'small warn-txt', canFuel
+      ? 'Για κατανάλωση πρόσθεσε στο ταμπλό το PID 5E (κατανάλωση) ή 10 (MAF) '
+        + 'από το «⚙ Επιλογή PID» και ξεκίνα νέα καταγραφή — υπολογίζεται μόνο από όσα PID διαβάζονται.'
+      : 'Το όχημα δεν δηλώνει ούτε 5E (L/h) ούτε 10 (MAF), άρα δεν μπορεί να υπολογιστεί κατανάλωση.'));
+  }
+  box.append(dl);
+  if (t.estimated) {
+    box.append(el('p', 'small muted',
+      'Η εκτίμηση από MAF υποθέτει στοιχειομετρικό μείγμα (14,7:1) και βενζίνη 0,745 kg/L. '
+      + 'Σε πλούσιο μείγμα (δυνατή επιτάχυνση) υποεκτιμά.'));
+  }
+
+  // --- επιδόσεις
+  perf.replaceChildren();
+  if (!hasSpeed) return perf.append(el('p', 'empty', 'Χρειάζεται PID ταχύτητας (0D).'));
+  const tgt = U.sprintTarget();
+  const sp1 = sprint(rows, tgt.kmh);
+  const sp60 = sprint(rows, U.getSystem() === 'metric' ? 60 : 48.28);
+  const qm = standingDistance(rows, 402);
+  const d400 = standingDistance(rows, 400);
+  const pl = el('dl', 'kv');
+  const addP = (k, v) => { pl.append(el('dt', '', k), el('dd', '', v)); };
+  addP(U.getSystem() === 'metric' ? '0–60 km/h' : '0–30 mph', sp60 ? `${sp60.time.toFixed(2)} s` : 'δεν ανιχνεύθηκε');
+  addP(tgt.label, sp1 ? `${sp1.time.toFixed(2)} s` : 'δεν ανιχνεύθηκε');
+  addP(U.getSystem() === 'metric' ? '400 m από στάση' : '1/4 μίλι (402 m)',
+    (U.getSystem() === 'metric' ? d400 : qm)
+      ? (() => {
+        const r = U.getSystem() === 'metric' ? d400 : qm;
+        const ex = U.display(r.exitSpeed, 'km/h', 0);
+        return `${r.time.toFixed(2)} s · έξοδος ${ex.v.toFixed(0)} ${ex.unit}`;
+      })()
+      : 'δεν ανιχνεύθηκε');
+  perf.append(pl);
+  perf.append(el('p', 'small muted',
+    `Δείγματα: ${rows.length}. Για αξιόπιστη μέτρηση χρειάζεται καταγραφή με ταχύτητα από στάση `
+    + 'και όσο πιο πυκνή δειγματοληψία γίνεται (λιγότερα PID στο ταμπλό = πιο γρήγορο polling).'));
 }
 
 // ------------------------------------------------------------------ on-board tests (Mode 06)
@@ -1168,6 +1426,29 @@ function init() {
   $('m06-unbounded').onchange = () => { if (S.m06) renderM06(S.m06); };
   $('btn-readiness').onclick = () => runReadiness().catch((e) => log('!', e.message));
   $('btn-print').onclick = printReport;
+  $('btn-trip').onclick = runTrip;
+  $('fuel-price').onchange = () => { if (tripSession()?.rows?.length) runTrip(); };
+
+  // --- μονάδες
+  $('units-sel').value = U.getSystem();
+  $('units-sel').onchange = () => {
+    U.setSystem($('units-sel').value);
+    if (S.elm || S.replay) buildDashboard(S.replay ? S.replay.session.pids : livePids());
+    renderAlertRules();
+    if (tripSession()?.rows?.length && !$('trip-out').querySelector('.empty')) runTrip();
+    requestDraw();
+    banner(`Μονάδες: ${U.getSystem() === 'metric' ? 'μετρικό' : 'imperial'}. Τα αποθηκευμένα δεδομένα μένουν μετρικά.`);
+  };
+
+  // --- ειδοποιήσεις
+  $('alerts-on').checked = AL.config.enabled;
+  $('alerts-sound').checked = AL.config.sound;
+  $('alerts-on').onchange = () => { AL.saveConfig({ enabled: $('alerts-on').checked }); renderAlertRules(); };
+  $('alerts-sound').onchange = () => { AL.saveConfig({ sound: $('alerts-sound').checked }); renderAlertRules(); };
+  $('alerts-reset').onclick = () => { AL.resetRules(); renderAlertRules(); banner('Τα όρια επανήλθαν στις προεπιλογές.'); };
+  $('alerts-test').onclick = () => AL.beep('warn');
+  renderAlertRules();
+  renderGarage();
   $('btn-rec').onclick = () => toggleRecording().catch((e) => log('!', e.message));
   $('btn-export').onclick = exportCurrent;
   $('btn-dtc').onclick = () => readDtcs().catch((e) => log('!', e.message));
