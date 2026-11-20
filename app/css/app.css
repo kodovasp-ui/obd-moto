@@ -143,6 +143,17 @@ textarea { width: 100%; resize: vertical; margin-bottom: 10px; }
 .chat .ai { align-self: flex-start; border: 1px solid var(--border); border-left: 3px solid var(--accent); }
 .chat .ai.err { border-color: var(--bad); color: var(--bad); }
 
+/* ---- επιλογή PID */
+dialog.wide { max-width: min(680px, calc(100vw - 24px)); }
+.pid-list { max-height: 55vh; overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; }
+.pid-group h3 { font-size: 13px; color: var(--muted); margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .04em; }
+.pid-group:first-child h3 { margin-top: 0; }
+.pid-row { display: grid; grid-template-columns: 20px 34px 1fr auto; gap: 8px; align-items: center; padding: 3px 2px; border-radius: 6px; }
+.pid-row:hover { background: var(--surface-2); }
+.pid-row input { flex: none; min-width: 0; }
+#pid-status table { margin-top: 4px; }
+#pid-status .err { color: var(--bad); }
+
 @media (max-width: 520px) {
   .charts { grid-template-columns: 1fr; }
   .rep li { grid-template-columns: 1fr; gap: 4px; }

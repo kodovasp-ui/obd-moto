@@ -12,7 +12,7 @@ export function newSession({ vin = null, source = 'live', pids = [] } = {}) {
 
 export const SERIES_META = (key) => (key === 'RV'
   ? { name: 'Τάση (ATRV)', unit: 'V', min: 10, max: 15.5, dec: 1 }
-  : PIDS[key]);
+  : PIDS[key] || { name: `PID ${key}`, unit: '', dec: 1 });
 
 export function toCsv(session) {
   const keys = [...session.pids, 'RV'].filter((k) => session.rows.some((r) => r.v[k] != null));
