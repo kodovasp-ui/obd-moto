@@ -167,7 +167,9 @@ button.icon { padding: 8px 10px; min-width: 42px; font-size: 16px; line-height: 
 /* ---- εκτύπωση / PDF */
 #print-head { display: none; }
 @media print {
-  :root { --bg: #fff; --surface: #fff; --surface-2: #fff; --text: #000; --muted: #444; --border: #999; color-scheme: light; }
+  /* Το :root[data-theme="dark"] έχει μεγαλύτερη specificity από σκέτο :root —
+     χωρίς το [data-theme] εδώ, η εκτύπωση σε σκοτεινό θέμα έβγαινε μαύρη. */
+  :root, :root[data-theme] { --bg: #fff; --surface: #fff; --surface-2: #fff; --text: #000; --muted: #444; --border: #999; color-scheme: light; }
   body { background: #fff; color: #000; font-size: 11pt; }
   .top, .tabs, .foot, .banner, .toolbar, #replay-bar, dialog, #charts, #log,
   #tab-live, #tab-history, #tab-ai, #tab-console, #tab-info, #tab-ecu { display: none !important; }
