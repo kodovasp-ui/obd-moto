@@ -20,7 +20,12 @@ export class LineChart {
     this.title = document.createElement('span');
     this.title.textContent = `${this.meta.name}`;
     this.valEl = document.createElement('b');
-    cap.append(this.title, this.valEl);
+    // Υπόμνημα για τη σύγκριση — εμφανίζεται μόνο όταν υπάρχει δεύτερη σειρά.
+    // Η διακεκομμένη γραμμή ξεχωρίζει και χωρίς χρώμα (αχρωματοψία, εκτύπωση).
+    this.legend = document.createElement('span');
+    this.legend.className = 'chart-legend';
+    this.legend.hidden = true;
+    cap.append(this.title, this.legend, this.valEl);
     this.canvas = document.createElement('canvas');
     this.canvas.setAttribute('role', 'img');
     this.canvas.setAttribute('aria-label', `Γράφημα ${this.meta.name}`);
@@ -73,6 +78,7 @@ export class LineChart {
     const css = getComputedStyle(this.el);
     const col = {
       line: css.getPropertyValue('--series-1').trim() || '#2a78d6',
+      line2: css.getPropertyValue('--series-2').trim() || '#e8650a',
       grid: css.getPropertyValue('--grid').trim() || '#ddd',
       muted: css.getPropertyValue('--muted').trim() || '#888',
       text: css.getPropertyValue('--text').trim() || '#000',
@@ -88,10 +94,24 @@ export class LineChart {
     const pts = [];
     for (const r of rows) if (r.t >= t0 && r.t <= t1 && r.v[k] != null) pts.push([r.t, conv(r.v[k], un)]);
 
-    // κλίμακα Y
+    // Σύγκριση: η αναφορά ευθυγραμμίζεται στην ΑΡΧΗ ΤΟΥ ΠΑΡΑΘΥΡΟΥ, όχι στον
+    // απόλυτο χρόνο ούτε στην αρχή της καταγραφής. Στο live το παράθυρο
+    // κυλάει (τελευταία 60 s), οπότε μια αναφορά 17 s θα έβγαινε αμέσως
+    // εκτός κάδρου αν την κολλούσαμε στην αρχή της καταγραφής.
+    const refRows = opts.ref || null;
+    const ref = [];
+    if (refRows?.length) {
+      const shift = refRows[0].t - t0;
+      for (const r of refRows) {
+        const t = r.t - shift;
+        if (t >= t0 && t <= t1 && r.v[k] != null) ref.push([t, conv(r.v[k], un)]);
+      }
+    }
+
+    // κλίμακα Y — κοινή για τις δύο σειρές, αλλιώς η σύγκριση παραπλανά
     let lo = Infinity; let hi = -Infinity;
-    for (const [, v] of pts) { if (v < lo) lo = v; if (v > hi) hi = v; }
-    if (!pts.length) { lo = conv(this.meta.min ?? 0, un); hi = conv(this.meta.max ?? 1, un); }
+    for (const [, v] of pts.concat(ref)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!pts.length && !ref.length) { lo = conv(this.meta.min ?? 0, un); hi = conv(this.meta.max ?? 1, un); }
     if (hi - lo < 1e-9) { const p = Math.abs(hi) * 0.05 || 1; lo -= p; hi += p; }
     const step = niceStep(hi - lo);
     lo = Math.floor(lo / step) * step;
@@ -115,6 +135,27 @@ export class LineChart {
     ctx.fillText(`${t0.toFixed(0)} s`, L, H - 4);
     ctx.textAlign = 'right';
     ctx.fillText(`${t1.toFixed(0)} s`, W - R, H - 4);
+
+    // γραμμή αναφοράς πρώτα, ώστε η τρέχουσα να μένει από πάνω
+    if (ref.length) {
+      ctx.strokeStyle = col.line2; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ref.forEach(([t, v], i) => (i ? ctx.lineTo(x(t), y(v)) : ctx.moveTo(x(t), y(v))));
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    this.legend.hidden = !ref.length;
+    if (ref.length) {
+      this.legend.replaceChildren();
+      const mk = (cls, text) => {
+        const s = document.createElement('span');
+        s.className = 'lg ' + cls;
+        s.textContent = text;
+        return s;
+      };
+      this.legend.append(mk('now', 'τώρα'), mk('ref', opts.refLabel || 'αναφορά'));
+    }
 
     // γραμμή 2px
     if (pts.length) {
