@@ -22,6 +22,9 @@ import * as G from './garage.js';
 import * as AL from './alerts.js';
 import { tripSummary, sprint, standingDistance, tripCost } from './trip.js';
 import * as TH from './theme.js';
+import {
+  DID_RANGES, didList, rangeCount, scanDids, describeValue,
+} from './did-scan.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -46,6 +49,7 @@ const S = {
   aiAbort: null,
   chatLive: { on: false, busy: false, timer: null, abort: null, msgs: [] },
   ecus: null, scan: null, // σάρωση μονάδων
+  did: null, dids: null, // σαρωτής DID (UDS 22)
   m06: null, m06run: null, // on-board tests (Mode 06)
   vehicle: null, // ενεργό προφίλ γκαράζ
 };
@@ -80,7 +84,7 @@ function setStatus(text, on) {
 }
 function setConnected(on) {
   for (const id of ['btn-live', 'btn-dtc', 'btn-clear', 'console-in', 'console-send', 'btn-rec', 'btn-ecu',
-    'btn-pids', 'pid-status-read', 'btn-scan', 'btn-m06', 'btn-readiness']) $(id).disabled = !on;
+    'btn-pids', 'pid-status-read', 'btn-scan', 'btn-m06', 'btn-readiness', 'btn-did']) $(id).disabled = !on;
   $('btn-connect').textContent = on ? 'Αποσύνδεση' : 'Σύνδεση BLE';
   $('btn-demo').disabled = on;
 }
@@ -1143,6 +1147,183 @@ function renderScan(list) {
   }
 }
 
+// ---------------------------------------------------------------- σαρωτής DID
+/** Οι μονάδες που μπορούμε να ρωτήσουμε: όσες βρήκε η σάρωση, αλλιώς ο κινητήρας. */
+function didTargets() {
+  if (S.ecus?.length) return S.ecus;
+  return [{ req: '7E0', resp: '7E8', wide: false, hint: 'Κινητήρας (ECM)', name: null, ids: {} }];
+}
+
+function renderDidControls() {
+  const sel = $('did-ecu');
+  const keep = sel.value;
+  sel.replaceChildren();
+  didTargets().forEach((e, i) => {
+    const o = el('option', '', `${ecuLabel(e)} — ${e.req}`);
+    o.value = String(i);
+    sel.append(o);
+  });
+  if (keep && sel.querySelector(`option[value="${keep}"]`)) sel.value = keep;
+  if (!S.ecus?.length) sel.firstChild.textContent += ' (χωρίς σάρωση μονάδων)';
+
+  const rs = $('did-range');
+  if (!rs.options.length) {
+    for (const [k, r] of Object.entries(DID_RANGES)) {
+      const o = el('option', '', `${r.label} — ${rangeCount(k)} ερωτήματα`);
+      o.value = k;
+      rs.append(o);
+    }
+    rs.onchange = showDidNote;
+  }
+  showDidNote();
+}
+
+function customRange() {
+  const from = $('did-from').value.trim().toUpperCase();
+  const to = $('did-to').value.trim().toUpperCase();
+  if (!from && !to) return null;
+  if (!/^[0-9A-F]{1,4}$/.test(from) || !/^[0-9A-F]{1,4}$/.test(to)) throw new Error('Η περιοχή θέλει δεκαεξαδικά, π.χ. 0100 και 01FF.');
+  if (parseInt(to, 16) < parseInt(from, 16)) throw new Error('Το «ως» είναι μικρότερο από το «από».');
+  return { from, to };
+}
+
+function showDidNote() {
+  let n;
+  try {
+    const c = customRange();
+    n = c
+      ? `Δική σου περιοχή ${c.from}–${c.to}: ${parseInt(c.to, 16) - parseInt(c.from, 16) + 1} ερωτήματα.`
+      : DID_RANGES[$('did-range').value].note;
+  } catch (e) { n = e.message; }
+  const count = (() => { try { return didList($('did-range').value, customRange()).length; } catch { return 0; } })();
+  // ~130 ms ανά ερώτημα με ATST20 — καλύτερα να το ξέρεις πριν ξεκινήσεις.
+  $('did-note').textContent = count
+    ? `${n} Εκτιμώμενος χρόνος ~${Math.ceil((count * 0.13) / 6) * 6} s.`
+    : n;
+}
+
+function renderDid(res, ecu, rangeLabel) {
+  const box = $('did-out');
+  box.replaceChildren();
+  const { found, asked } = res;
+  const prot = res.protected;
+
+  box.append(el('p', 'muted small',
+    `${ecuLabel(ecu)} · ${rangeLabel} · ${asked} ερωτήματα → ${found.length} απαντήσεις`
+    + (prot.length ? `, ${prot.length} κλειδωμένα` : '')));
+
+  if (!found.length && !prot.length) {
+    box.append(el('p', 'empty', 'Καμία απάντηση σε αυτή την περιοχή. Δοκίμασε άλλη, ή άλλη μονάδα.'));
+    return;
+  }
+
+  const live = found.filter((f) => f.live);
+  if (live.length) {
+    box.append(el('p', 'small',
+      `${live.length} DID άλλαξαν τιμή μεταξύ των δύο περασμάτων — αυτά είναι ζωντανά δεδομένα.`));
+  }
+
+  if (found.length) {
+    const card = el('div', 'card');
+    card.append(el('h2', '', 'Απαντήσεις'));
+    const t = el('table');
+    const hr = el('tr');
+    hr.append(el('th', '', 'DID'), el('th', '', 'Τι είναι'), el('th', '', 'Τιμή'), el('th', '', ''));
+    t.append(hr);
+    // Πρώτα τα ζωντανά: αυτά ψάχνει κανείς.
+    for (const f of [...found].sort((a, b) => (b.live - a.live) || a.did.localeCompare(b.did))) {
+      const d = describeValue(f.data);
+      const tr = el('tr');
+      const val = el('td', '');
+      // Τα F4xx είναι OBD PID τυλιγμένα σε DID: εδώ η κλίμακα ΕΙΝΑΙ γνωστή,
+      // οπότε δείχνουμε κανονική τιμή με μονάδα αντί για ωμά bytes.
+      const obdPid = f.did.startsWith('F4') ? f.did.slice(2) : null;
+      const v = obdPid ? decodePid(obdPid, f.data) : null;
+      if (v != null) {
+        const sh = U.display(v, PIDS[obdPid].unit, PIDS[obdPid].dec ?? 1);
+        val.append(el('div', '', `${sh.v.toFixed(sh.dec)} ${sh.unit}`.trim()));
+      }
+      if (d.text) val.append(el('div', '', d.text));
+      val.append(el('div', 'mono small muted', d.hex));
+      if (d.nums.length && !d.text) {
+        val.append(el('div', 'small muted', d.nums.map(([k, v]) => `${k}: ${v}`).join(' · ')));
+      }
+      if (f.live && f.data2) {
+        val.append(el('div', 'small warn-txt', '→ ' + describeValue(f.data2).hex));
+      }
+      const tag = el('td', '');
+      tag.append(f.live ? el('span', 'pill warn', 'ζωντανό') : el('span', 'pill', `${d.len} B`));
+      const what = obdPid && PIDS[obdPid] ? `${pidName(obdPid)} (PID ${obdPid})` : (f.name || '—');
+      tr.append(el('td', 'mono', f.did), el('td', 'small', what), val, tag);
+      t.append(tr);
+    }
+    card.append(t);
+    card.append(el('p', 'muted small',
+      'Οι κλίμακες των δεδομένων κατασκευαστή δεν είναι δημοσιευμένες — δεν τις εφευρίσκουμε. '
+      + 'Δίνονται τα ωμά bytes και οι πιθανές αναγνώσεις· συσχέτισε τις με το τι κάνει το όχημα.'));
+    box.append(card);
+  }
+
+  if (prot.length) {
+    const card = el('div', 'card');
+    card.append(el('h2', '', 'Κλειδωμένα'));
+    card.append(el('p', 'muted small',
+      'Υπάρχουν, αλλά η μονάδα δεν τα δίνει χωρίς security access ή σε άλλη session. '
+      + 'Δεν τα ξεκλειδώνουμε: θα απαιτούσε υπηρεσία εγγραφής.'));
+    const t = el('table');
+    for (const p of prot) {
+      const tr = el('tr');
+      tr.append(el('td', 'mono', p.did), el('td', 'small', p.name || '—'), el('td', 'small muted', p.text));
+      t.append(tr);
+    }
+    card.append(t);
+    box.append(card);
+  }
+}
+
+async function runDidScan() {
+  if (!S.elm) return banner('Σύνδεσε τη μοτοσυκλέτα ή πάτα Demo πρώτα.', true);
+  if (S.did?.running) return;
+  if (S.live) { S.live = false; await new Promise((r) => setTimeout(r, 400)); }
+
+  let dids; let custom;
+  try {
+    custom = customRange();
+    dids = didList($('did-range').value, custom);
+  } catch (e) { return banner(e.message, true); }
+  if (!dids.length) return banner('Κενή περιοχή.', true);
+
+  const ecu = didTargets()[Number($('did-ecu').value) || 0];
+  S.did = { running: true, stop: false };
+  $('btn-did').disabled = true;
+  $('btn-did-stop').hidden = false;
+  $('did-progress').hidden = false;
+  banner('');
+  try {
+    const res = await scanDids(S.elm, ecu, {
+      dids,
+      probeLive: $('did-live').checked,
+      stop: () => S.did.stop,
+      onProgress: ({ done, total, found, did, phase }) => {
+        $('did-progress').querySelector('i').style.width = (total ? (done / total) * 100 : 0).toFixed(0) + '%';
+        if (phase === 'done') $('did-status').textContent = `Τέλος · ${found} απαντήσεις`;
+        else if (phase === 'live') $('did-status').textContent = `Έλεγχος ζωντανών ${did}… (${done}/${total})`;
+        else $('did-status').textContent = `${done}/${total} · ${did} · βρέθηκαν ${found}`;
+      },
+    });
+    S.dids = { ecu, res };
+    renderDid(res, ecu, custom ? `${custom.from}–${custom.to}` : DID_RANGES[$('did-range').value].label);
+    if (S.did.stop) banner('Η σάρωση DID διακόπηκε — τα αποτελέσματα είναι μερικά.');
+  } catch (e) {
+    log('!', e.message);
+    banner('Η σάρωση DID απέτυχε: ' + e.message, true);
+  } finally {
+    S.did.running = false;
+    $('btn-did').disabled = !S.elm;
+    $('btn-did-stop').hidden = true;
+  }
+}
+
 async function runScan() {
   if (!S.elm) return banner('Σύνδεσε τη μοτοσυκλέτα ή πάτα Demo πρώτα.', true);
   if (S.scan?.running) return;
@@ -1167,6 +1348,7 @@ async function runScan() {
     });
     S.ecus = list;
     renderScan(list);
+    renderDidControls(); // οι μονάδες που βρέθηκαν γίνονται στόχοι για τον σαρωτή DID
     if (S.scan.stop) banner('Η σάρωση διακόπηκε — τα αποτελέσματα είναι μερικά.');
   } catch (e) {
     log('!', e.message);
@@ -1421,6 +1603,11 @@ function init() {
     $('scan-mode').append(o);
   }
   $('btn-scan').onclick = runScan;
+  $('btn-did').onclick = runDidScan;
+  $('btn-did-stop').onclick = () => { if (S.did) S.did.stop = true; };
+  $('did-from').oninput = showDidNote;
+  $('did-to').oninput = showDidNote;
+  renderDidControls();
   $('btn-scan-stop').onclick = () => { if (S.scan) S.scan.stop = true; };
   $('btn-m06').onclick = () => runM06().catch((e) => log('!', e.message));
   $('btn-m06-stop').onclick = () => { if (S.m06run) S.m06run.stop = true; };

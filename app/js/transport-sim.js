@@ -53,16 +53,32 @@ const SIM_ECUS = {
     resp: '71C', name: 'ABS-SIM',
     ids: { F197: 'ABS-SIM', F18C: 'SNABS-00777', F187: '0265S41200' },
     dtcs: [[0x50, 0x95, 0x08, 0x08]], // C1095-08
+    // Ζωντανά δεδομένα κατασκευαστή: ταχύτητες τροχών και πίεση φρένου.
+    live: {
+      1000: (s) => w16(s.speed * 100),
+      1001: (s) => w16(s.speed * 100 + (s.speed > 5 ? 7 : 0)),
+      1002: (s) => w16(s.speed * 100),
+      1003: (s) => w16(s.speed * 100 - (s.speed > 5 ? 11 : 0)),
+      1010: (s) => [Math.round(s.speed > 60 ? 12 : 2)],
+    },
+    statics: { 1100: 'ABS-CFG-01' },
+    secure: ['F1A0'],
   },
   715: {
     resp: '71D', name: 'SRS-SIM',
     ids: { F197: 'SRS-SIM', F18C: 'SNSRS-00901', F187: '0285S10033' },
     dtcs: [],
+    statics: { 2000: [0x00], 2001: 'SRS-REV-C' },
+    secure: ['F1A0', 'F1A1'],
   },
   720: {
     resp: '728', name: 'IPC-SIM',
     ids: { F197: 'IPC-SIM', F18C: 'SNIPC-00120', F187: '0263S70901' },
     dtcs: [[0xc1, 0x01, 0x00, 0x08]], // U0101-00
+    live: {
+      '0100': (s) => [0, 0, ...w16(14230 + Math.round(s.t))], // χιλιόμετρα
+      '0101': (s) => [Math.round(78 - s.t / 10)],             // στάθμη καυσίμου %
+    },
   },
   '18DA10F1': {
     resp: '18DAF110', engine: true, name: 'ECM-MSE60',
@@ -170,11 +186,14 @@ export class SimTransport {
     if (c.startsWith('19')) return '7F 19 12'; // subFunctionNotSupported
     if (c.startsWith('22')) {
       const did = c.slice(2, 6);
-      const val = ecu.ids[did];
-      if (val) {
-        return bytes(0x62, parseInt(did.slice(0, 2), 16), parseInt(did.slice(2), 16),
-          [...val].map((ch) => ch.charCodeAt(0)));
-      }
+      const head = [0x62, parseInt(did.slice(0, 2), 16), parseInt(did.slice(2), 16)];
+      const asBytes = (v) => (typeof v === 'string' ? [...v].map((ch) => ch.charCodeAt(0)) : v);
+
+      if (ecu.ids[did]) return bytes(...head, asBytes(ecu.ids[did]));
+      if (ecu.secure?.includes(did)) return '7F 22 33';  // securityAccessDenied
+      if (ecu.statics?.[did]) return bytes(...head, asBytes(ecu.statics[did]));
+      if (ecu.live?.[did]) return bytes(...head, ecu.live[did](this.state()));
+
       if (!ecu.engine) return '7F 22 31'; // requestOutOfRange
       return null; // ο κινητήρας έχει κι άλλα DID πιο κάτω
     }
@@ -308,6 +327,14 @@ export class SimTransport {
     }
     if (mode === '22') {
       const did = c.slice(2, 6);
+      // F4xx = τα OBD PID «τυλιγμένα» σε DID (ISO 15031-5 / 14229). Ο κινητήρας
+      // τα δίνει και από τους δύο δρόμους — καλό για δοκιμή του σαρωτή DID.
+      if (did.startsWith('F4')) {
+        const inner = this.pid(did.slice(2), this.state());
+        if (!inner || inner === 'NO DATA') return '7F 22 31';
+        return bytes(0x62, 0xf4, parseInt(did.slice(2), 16),
+          inner.split(' ').map((h) => parseInt(h, 16)));
+      }
       if (did === 'F190') {
         const v = [...VIN].map((ch) => ch.charCodeAt(0));
         return `014\r0: 62 F1 90 ${bytes(...v.slice(0, 3))}\r1: ${bytes(...v.slice(3, 10))}\r2: ${bytes(...v.slice(10, 17))}`;
