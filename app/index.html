@@ -10,6 +10,19 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="css/app.css">
+  <!-- Θέμα πριν το πρώτο paint, αλλιώς φαίνεται αναλαμπή. Η λογική είναι στο js/theme.js. -->
+  <script>
+    try {
+      var t = localStorage.getItem('obd.theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+        document.querySelector('meta[name="theme-color"]')
+          .setAttribute('content', t === 'light' ? '#f4f6f8' : '#0f1216');
+      } else if (!window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f4f6f8');
+      }
+    } catch (e) { /* χωρίς localStorage: μένει το αυτόματο */ }
+  </script>
   <script src="js/version.js"></script>
   <script type="module" src="js/app.js"></script>
 </head>
@@ -23,6 +36,7 @@
       </div>
     </div>
     <div class="actions">
+      <button id="btn-theme" class="ghost icon" title="Θέμα εμφάνισης" aria-label="Θέμα εμφάνισης">◐</button>
       <button id="btn-install" class="ghost" hidden>Εγκατάσταση</button>
       <button id="btn-demo" class="ghost">Demo</button>
       <button id="btn-connect" class="primary">Σύνδεση BLE</button>
@@ -265,7 +279,16 @@
               <option value="imperial">Imperial (°F, mph, psi, gal)</option>
             </select>
           </label>
+          <label class="small">Θέμα:
+            <select id="theme-sel" aria-label="Θέμα εμφάνισης">
+              <option value="auto">Αυτόματο (από το σύστημα)</option>
+              <option value="light">Φωτεινό</option>
+              <option value="dark">Σκοτεινό</option>
+            </select>
+          </label>
         </div>
+        <p class="muted small">Το φωτεινό θέμα διαβάζεται καλύτερα στον ήλιο· το σκοτεινό κουράζει
+          λιγότερο σε νυχτερινή διάγνωση. Το «αυτόματο» ακολουθεί το κινητό σου.</p>
         <p class="muted small">Η μετατροπή αφορά μόνο την εμφάνιση. Οι αποθηκευμένες συνεδρίες, το CSV
           και ό,τι στέλνεται στον Βοηθό μένουν <b>πάντα μετρικά</b>, ώστε να συγκρίνονται μεταξύ τους.</p>
       </div>

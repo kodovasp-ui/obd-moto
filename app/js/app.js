@@ -21,6 +21,7 @@ import * as U from './units.js';
 import * as G from './garage.js';
 import * as AL from './alerts.js';
 import { tripSummary, sprint, standingDistance, tripCost } from './trip.js';
+import * as TH from './theme.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -1439,6 +1440,22 @@ function init() {
     requestDraw();
     banner(`Μονάδες: ${U.getSystem() === 'metric' ? 'μετρικό' : 'imperial'}. Τα αποθηκευμένα δεδομένα μένουν μετρικά.`);
   };
+
+  // --- θέμα εμφάνισης
+  const syncTheme = () => {
+    $('theme-sel').value = TH.getMode();
+    $('btn-theme').textContent = TH.ICON[TH.getMode()];
+    $('btn-theme').title = `Θέμα: ${TH.LABEL[TH.getMode()]}`;
+  };
+  // Τα γραφήματα ζωγραφίζουν σε canvas: διαβάζουν τα χρώματα από το CSS μία φορά,
+  // οπότε μετά την αλλαγή θέματος πρέπει να ξαναζωγραφιστούν.
+  TH.subscribe(() => { syncTheme(); requestDraw(); });
+  $('theme-sel').onchange = () => TH.setMode($('theme-sel').value);
+  $('btn-theme').onclick = () => {
+    TH.cycle();
+    banner(`Θέμα: ${TH.LABEL[TH.getMode()]}.`);
+  };
+  syncTheme();
 
   // --- ειδοποιήσεις
   $('alerts-on').checked = AL.config.enabled;
