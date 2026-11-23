@@ -29,6 +29,7 @@ import {
 import { PROTOCOLS, protocolInfo, sweepProtocols, CAN_ONLY } from './protocols.js';
 import { readJ1939 } from './j1939.js';
 import { readMode05 } from './mode05.js';
+import * as TR from './i18n.js';
 import { decodeVin } from './vin.js';
 import { analyzeBattery, HOWTO } from './battery.js';
 import {
@@ -86,17 +87,17 @@ function log(dir, text) {
 function banner(text, isErr = false) {
   const b = $('banner');
   b.hidden = !text;
-  b.textContent = text || '';
+  b.textContent = text ? TR.t(text) : ''; // σταθερά μηνύματα μεταφράζονται· τα υπόλοιπα μένουν ως έχουν
   b.classList.toggle('err', isErr);
 }
 function setStatus(text, on) {
-  $('status').textContent = text;
+  $('status').textContent = TR.t(text);
   $('status').classList.toggle('on', !!on);
 }
 function setConnected(on) {
   for (const id of ['btn-live', 'btn-dtc', 'btn-clear', 'console-in', 'console-send', 'btn-rec', 'btn-ecu',
     'btn-pids', 'pid-status-read', 'btn-scan', 'btn-m06', 'btn-readiness', 'btn-did', 'btn-j1939', 'btn-m05']) $(id).disabled = !on;
-  $('btn-connect').textContent = on ? 'Αποσύνδεση' : 'Σύνδεση BLE';
+  $('btn-connect').textContent = TR.t(on ? 'Αποσύνδεση' : 'Σύνδεση BLE');
   $('btn-demo').disabled = on;
 }
 
@@ -2004,6 +2005,10 @@ function init() {
   $('fuel-price').onchange = () => { if (tripSession()?.rows?.length) runTrip(); };
 
   // --- μονάδες
+  // --- γλώσσα: αλλαγή → αποθήκευση και επαναφόρτωση (το στατικό UI μεταφράζεται στο load)
+  $('lang-sel').value = TR.getLang();
+  $('lang-sel').onchange = () => { TR.setLang($('lang-sel').value); location.reload(); };
+
   $('units-sel').value = U.getSystem();
   $('units-sel').onchange = () => {
     U.setSystem($('units-sel').value);
@@ -2143,6 +2148,7 @@ function init() {
   }
   showTab(store.get('obd.tab', 'live'));
   setupPwa();
+  TR.translateDom(); // μεταφράζει το στατικό UI αν η γλώσσα είναι αγγλικά
 }
 
 init();
