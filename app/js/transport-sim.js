@@ -86,6 +86,17 @@ const SIM_ECUS = {
     dtcs: [[0x00, 0x53, 0x00, 0x89]],
   },
 };
+// Πρωτόκολλα που μπορεί να προσποιηθεί ο προσομοιωτής (αριθμός ELM → όνομα ATDP).
+// Στα non-CAN οι μονάδες πέρα από τον κινητήρα δεν απαντούν, όπως στην πραγματικότητα.
+// autoOk: αν η αυτόματη ανίχνευση (ATSP0) πετυχαίνει. Στο KWP την αφήνουμε να
+// αποτυγχάνει επίτηδες — έτσι συμπεριφέρονται πολλοί φτηνοί adapter σε non-CAN,
+// και δοκιμάζεται η σάρωση πρωτοκόλλων ένα-ένα.
+const SIM_PROTO = {
+  3: { name: 'ISO 9141-2', autoOk: true },
+  5: { name: 'ISO 14230-4 KWP (fast init)', autoOk: false },
+  6: { name: 'ISO 15765-4 (CAN 11/500)', autoOk: true },
+};
+
 const STORED = [0x05, 0x62]; // P0562 τάση συστήματος χαμηλή (demo)
 const PENDING = [0x01, 0x31]; // P0131 λάμδα B1S1 χαμηλή τάση (demo)
 
@@ -112,7 +123,14 @@ export class SimTransport {
     this.headers = false;
     this.cleared = false;
     this.hdr = '7DF'; // τρέχον ATSH
+    // Ποιο πρωτόκολλο προσποιείται — ρυθμίζεται από τις Ρυθμίσεις για δοκιμές.
+    try { this.proto = SIM_PROTO[localStorage.getItem('obd.sim.proto')] ? localStorage.getItem('obd.sim.proto') : '6'; } catch { this.proto = '6'; }
+    this.spSet = false;    // έχει επιλεγεί σωστό πρωτόκολλο;
+    this.wrongProto = false;
   }
+
+  /** Εκτός CAN μιλάει μόνο ο κινητήρας — καμία UDS μονάδα, όπως στην πραγματικότητα. */
+  get isCanSim() { return this.proto === '6'; }
 
   static isSupported() { return true; }
   async connect() { this.t0 = performance.now(); }
@@ -268,20 +286,37 @@ export class SimTransport {
       if (a === 'Z' || a === 'WS') return '\rELM327 v2.1 (sim)';
       if (a === 'I') return 'ELM327 v2.1 (sim)';
       if (a === 'RV') return this.state().volt.toFixed(1) + 'V';
-      if (a === 'DP') return 'AUTO, ISO 15765-4 (CAN 11/500)';
-      if (a === 'DPN') return 'A6';
+      // Το πρωτόκολλο του προσομοιωτή αλλάζει από τις Ρυθμίσεις, ώστε να
+      // δοκιμάζεται και η συμπεριφορά σε οχήματα πριν το CAN.
+      if (a === 'DP') return SIM_PROTO[this.proto].name;
+      if (a === 'DPN') return (this.spSet ? '' : 'A') + this.proto;
       if (a === '@1') return 'SIMULATOR';
+      if (a.startsWith('SP')) {
+        const n = a.slice(2).replace(/^A/, '');
+        // ATSP0 = αυτόματο: «πιάνει» μόνο αν το πρωτόκολλο το επιτρέπει.
+        this.spSet = n === this.proto ? true : (n === '0' ? SIM_PROTO[this.proto].autoOk : false);
+        this.wrongProto = n !== '0' && n !== this.proto;
+        return 'OK';
+      }
       if (a.startsWith('SH')) { this.hdr = a.slice(2); return 'OK'; }
       if (a.startsWith('H')) this.headers = a === 'H1';
       return 'OK';
     }
 
     // --- μονάδες πέρα από τον κινητήρα: μόνο UDS (10 01, 19 02, 22) όπως στην πραγματικότητα
+    // Λάθος πρωτόκολλο ή αποτυχημένη αυτόματη ανίχνευση: ο δίαυλος σωπαίνει.
+    if (this.wrongProto || !this.spSet) return 'UNABLE TO CONNECT';
+
     const ecu = this.target();
     if (!ecu) return 'NO DATA';
-    if (!ecu.engine) return this.uds(c, ecu) ?? 'NO DATA';
-    const udsReply = this.uds(c, ecu);
-    if (udsReply) return udsReply;
+    if (!this.isCanSim) {
+      // ISO 9141-2 / KWP2000: μόνο τα OBD modes, καμία υπηρεσία UDS.
+      if (!ecu.engine || /^(10|19|22)/.test(c)) return 'NO DATA';
+    } else {
+      if (!ecu.engine) return this.uds(c, ecu) ?? 'NO DATA';
+      const udsReply = this.uds(c, ecu);
+      if (udsReply) return udsReply;
+    }
 
     const s = this.state();
     const mode = c.slice(0, 2);
@@ -300,9 +335,12 @@ export class SimTransport {
       const d = this.pid(pid, frozen);
       return d ? `42 ${pid} 00 ${d}` : 'NO DATA';
     }
-    if (c === '03') return this.cleared ? '43 00' : bytes(0x43, 1, ...STORED);
-    if (c === '07') return this.cleared ? '47 00' : bytes(0x47, 1, ...PENDING);
-    if (c === '0A') return '4A 00';
+    // Το byte πλήθους κωδικών υπάρχει ΜΟΝΟ στο CAN (ISO 15765-4). Στα ISO 9141-2
+    // και KWP2000 οι κωδικοί ακολουθούν κατευθείαν το 43/47/4A.
+    const n = (count) => (this.isCanSim ? [count] : []);
+    if (c === '03') return this.cleared ? bytes(0x43, ...n(0)) : bytes(0x43, ...n(1), ...STORED);
+    if (c === '07') return this.cleared ? bytes(0x47, ...n(0)) : bytes(0x47, ...n(1), ...PENDING);
+    if (c === '0A') return bytes(0x4a, ...n(0));
     if (c === '04') { this.cleared = true; return '44'; }
     if (c === '0902') {
       const v = [...VIN].map((ch) => ch.charCodeAt(0));
