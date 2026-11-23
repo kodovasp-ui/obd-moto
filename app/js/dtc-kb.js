@@ -4,12 +4,14 @@
 // (τιμές αντιστάσεων, pinout, διαδικασίες). Live τιμές: PID mode 01 που αξίζει να δεις.
 
 import { TITLES, genericTitle, subsystem, isGeneric, SYS_NAME, coverage } from './dtc-generic.js';
+import { userLookup, userCodes, userCount } from './dtc-user.js';
 
 export const SRC = {
   sae: { name: 'SAE J2012 — τυποποιημένοι γενικοί κωδικοί OBD-II', url: 'https://www.sae.org/standards/content/j2012_201812/' },
   crm: { name: 'car-repairmanual.com — λίστα κωδικών CFMOTO (ανεπίσημη, κυρίως ATV, παραλλαγές Bosch/Delphi)', url: 'https://www.car-repairmanual.com/all-motorcycle-manual/cfmoto/cfmoto-error-codes/' },
   cf500: { name: 'CFMOTO CF500 Service Manual (2009) — διάγνωση P0131', url: 'https://www.quadmania.cz/upload/files/manualy/724_CF%20500%20servis%20manual.pdf' },
   forum: { name: 'cfmoto-forum.com — οι κωδικοί P είναι γενικοί του κατασκευαστή ECU (Bosch/Delphi)', url: 'https://cfmoto-forum.com/400450-17/cforce-450-efi-light-on/' },
+  user: { name: 'Δικό σου αρχείο κωδικών (από το εγχειρίδιο σέρβις του οχήματος)', url: null },
 };
 
 const CHECK_CONN = 'Οπτικός έλεγχος φις και πλεξούδας (οξείδωση, σπασμένα καλώδια, τριβή σε πλαίσιο/εξάτμιση).';
@@ -254,6 +256,19 @@ function liveForCode(c) {
  */
 export function lookup(code) {
   const c = String(code).toUpperCase();
+
+  // Ό,τι φόρτωσε ο χρήστης από το εγχειρίδιό του προηγείται: ξέρει το όχημά
+  // του καλύτερα από μια γενική βάση, και οι ειδικοί κωδικοί κατασκευαστή
+  // δεν υπάρχουν πουθενά αλλού.
+  const u = userLookup(c);
+  if (u) {
+    return {
+      code: c, known: 'user', t: u.t, sub: subsystem(c),
+      causes: u.causes, steps: u.steps.length ? u.steps : [CHECK_CONN, LAST],
+      live: liveForCode(c), sources: [SRC.user],
+    };
+  }
+
   const e = E[c];
   if (e) {
     return { code: c, known: 'full', ...e, sources: e.src.map((k) => SRC[k]), sub: subsystem(c) };
@@ -286,11 +301,14 @@ export function lookup(code) {
 /** Κωδικοί με χειρόγραφη εγγραφή (αιτίες + βήματα). */
 export const KB_CODES = Object.keys(E).sort();
 
-/** Όλοι οι κωδικοί που αναγνωρίζουμε με τίτλο — για αυτόματη συμπλήρωση στην αναζήτηση. */
-export const ALL_CODES = [...new Set([...Object.keys(E), ...Object.keys(TITLES)])].sort();
+/**
+ * Όλοι οι κωδικοί που αναγνωρίζουμε με τίτλο — για αυτόματη συμπλήρωση.
+ * Συνάρτηση, όχι σταθερά: οι κωδικοί του χρήστη φορτώνονται αργότερα.
+ */
+export const allCodes = () => [...new Set([...Object.keys(E), ...Object.keys(TITLES), ...userCodes()])].sort();
 
 /** Σύνοψη κάλυψης για το UI. */
 export function kbCoverage() {
   const { titles, families } = coverage();
-  return { full: Object.keys(E).length, titles, families };
+  return { full: Object.keys(E).length, titles, families, user: userCount() };
 }

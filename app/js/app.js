@@ -11,7 +11,8 @@ import { LineChart } from './chart.js';
 import { newSession, downloadCsv, fromCsv, SERIES_META } from './session.js';
 import { saveSession, getSession, listSessions, deleteSession } from './db.js';
 import { buildReport, compareReports } from './health.js';
-import { lookup, ALL_CODES, kbCoverage } from './dtc-kb.js';
+import { lookup, allCodes, kbCoverage } from './dtc-kb.js';
+import { parseUserDtcs, addUserDtcs, clearUser, userCount, SAMPLE } from './dtc-user.js';
 import * as AI from './assistant.js';
 import { ECU_DB, REFERENCE, ECU_DIDS } from './ecu-db.js';
 import { scanEcus, ecuLabel, SCAN_MODES } from './ecu-scan.js';
@@ -517,8 +518,11 @@ function kbCard(code, open = false) {
   d.open = open;
   const sum = el('summary');
   sum.append(el('span', 'code bad', e.code), el('span', '', e.t));
-  const level = { full: ['ok', 'με οδηγό ελέγχου'], title: ['info', 'τίτλος SAE'] }[e.known]
-    || ['warn', 'μόνο δομή κωδικού'];
+  const level = {
+    full: ['ok', 'με οδηγό ελέγχου'],
+    title: ['info', 'τίτλος SAE'],
+    user: ['ok', 'από το αρχείο σου'],
+  }[e.known] || ['warn', 'μόνο δομή κωδικού'];
   sum.append(el('span', `pill ${level[0]}`, level[1]));
   d.append(sum);
   if (e.sub) d.append(el('p', 'muted small', 'Υποσύστημα: ' + e.sub));
@@ -539,13 +543,54 @@ function kbCard(code, open = false) {
   const src = el('p', 'src');
   src.append('Πηγές: ');
   e.sources.forEach((s, i) => {
+    if (!s.url) { src.append(i ? ' · ' : '', s.name); return; } // δικό σου αρχείο — δεν έχει σύνδεσμο
     const a = el('a', '', s.name);
     a.href = s.url; a.target = '_blank'; a.rel = 'noopener';
     src.append(i ? ' · ' : '', a);
   });
-  src.append(' — Τα βήματα είναι γενική καθοδήγηση· επιβεβαίωσε τιμές με το εγχειρίδιο σέρβις.');
+  // Οι δικοί σου κωδικοί ΗΡΘΑΝ από το εγχειρίδιο — δεν έχει νόημα να σε στέλνουμε πίσω σε αυτό.
+  if (e.known !== 'user') {
+    src.append(' — Τα βήματα είναι γενική καθοδήγηση· επιβεβαίωσε τιμές με το εγχειρίδιο σέρβις.');
+  }
   d.append(src);
   return d;
+}
+
+function renderKbCoverage() {
+  $('kb-list').replaceChildren(...allCodes().map((c) => { const o = el('option'); o.value = c; return o; }));
+  const cov = kbCoverage();
+  $('kb-coverage').textContent = `Βάση: ${cov.full} κωδικοί με πλήρη οδηγό ελέγχου, `
+    + `${cov.titles} με τίτλο SAE, ${cov.families} από συστηματικές οικογένειες `
+    + `(ανά κύλινδρο, bank/αισθητήρα, πηνίο) — σύνολο ${cov.full + cov.titles + cov.families}`
+    + (cov.user ? `, και ${cov.user} δικοί σου` : '') + '. '
+    + 'Ό,τι δεν καλύπτεται δείχνει τουλάχιστον το υποσύστημα.';
+  $('user-dtc-count').textContent = cov.user
+    ? `${cov.user} κωδικοί φορτωμένοι από εσένα.`
+    : 'Δεν έχεις φορτώσει δικούς σου κωδικούς.';
+  $('btn-user-dtc-clear').hidden = !cov.user;
+}
+
+async function importUserDtcs(file) {
+  const note = $('user-dtc-note');
+  note.className = 'small muted';
+  try {
+    const text = await file.text();
+    const res = parseUserDtcs(text);
+    if (!res.added) {
+      note.className = 'small err';
+      note.textContent = 'Δεν βρέθηκε κανένας έγκυρος κωδικός. '
+        + (res.errors[0] || 'Περίμενα γραμμές της μορφής: P1234,Περιγραφή');
+      return;
+    }
+    addUserDtcs(res.table);
+    renderKbCoverage();
+    note.textContent = `Προστέθηκαν ${res.added} κωδικοί`
+      + (res.skipped ? `, παραλείφθηκαν ${res.skipped} γραμμές: ${res.errors.join(' ')}` : '.');
+    banner(`Φορτώθηκαν ${res.added} δικοί σου κωδικοί. Εμφανίζονται παντού, με πηγή «δικό σου αρχείο».`);
+  } catch (e) {
+    note.className = 'small err';
+    note.textContent = 'Δεν διαβάστηκε το αρχείο: ' + e.message;
+  }
 }
 
 async function readDtcs() {
@@ -1861,12 +1906,25 @@ function init() {
   $('confirm-clear').addEventListener('close', () => onClearClosed().catch((e) => log('!', e.message)));
   $('console-form').onsubmit = sendConsole;
   $('kb-form').onsubmit = kbSearch;
-  $('kb-list').append(...ALL_CODES.map((c) => { const o = el('option'); o.value = c; return o; }));
-  const cov = kbCoverage();
-  $('kb-coverage').textContent = `Βάση: ${cov.full} κωδικοί με πλήρη οδηγό ελέγχου, `
-    + `${cov.titles} με τίτλο SAE, ${cov.families} από συστηματικές οικογένειες `
-    + `(ανά κύλινδρο, bank/αισθητήρα, πηνίο) — σύνολο ${cov.full + cov.titles + cov.families}. `
-    + 'Ό,τι δεν καλύπτεται δείχνει τουλάχιστον το υποσύστημα.';
+  $('user-dtc-file').onchange = (e) => {
+    const f = e.target.files?.[0];
+    if (f) importUserDtcs(f);
+    e.target.value = ''; // ώστε να ξαναδουλεύει με το ίδιο αρχείο
+  };
+  $('btn-user-dtc-sample').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([SAMPLE], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'kodikoi-ypodeigma.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  $('btn-user-dtc-clear').onclick = () => {
+    if (!confirm(`Διαγραφή και των ${userCount()} δικών σου κωδικών; Δεν αναιρείται.`)) return;
+    clearUser();
+    renderKbCoverage();
+    $('user-dtc-note').textContent = '';
+  };
+  renderKbCoverage();
   $('btn-report').onclick = reportFromCurrent;
   $('btn-ecu').onclick = () => readEcu().catch((e) => log('!', e.message));
   renderEcu(store.get('obd.ecuId', null));
