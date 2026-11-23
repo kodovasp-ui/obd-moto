@@ -157,6 +157,33 @@
         <p class="muted small mono" id="scan-status"></p>
       </div>
       <div id="scan-out"><p class="empty">Δεν έχει γίνει σάρωση.</p></div>
+
+      <div class="card">
+        <h2>Σαρωτής DID <span class="pill warn">προχωρημένο</span></h2>
+        <p class="muted small">Το OBD-II δίνει μόνο όσα επιβάλλει ο νόμος. Κάθε μονάδα όμως εκθέτει
+          και δικά της δεδομένα σε ταυτοποιητές (DID) των 16 bit, που διαβάζονται με
+          <code>22</code>. Εδώ ρωτάμε μια-μια τις διευθύνσεις μιας περιοχής και κρατάμε
+          ό,τι απαντά — έτσι βγαίνουν ζωντανά δεδομένα ABS, airbag ή κιβωτίου.
+          <b>Μόνο ανάγνωση.</b> Ό,τι ζητά security access σημειώνεται και αφήνεται.</p>
+        <div class="toolbar">
+          <select id="did-ecu" aria-label="Μονάδα"></select>
+          <select id="did-range" aria-label="Περιοχή DID"></select>
+          <button id="btn-did" class="primary" disabled>Έναρξη</button>
+          <button id="btn-did-stop" class="ghost" hidden>Διακοπή</button>
+        </div>
+        <div class="toolbar">
+          <label class="small"><input type="checkbox" id="did-live" checked> Δεύτερο πέρασμα (εντοπισμός ζωντανών)</label>
+          <label class="small">Δική σου περιοχή:
+            <input id="did-from" class="mono" placeholder="0100" maxlength="4" style="max-width:80px">
+            –
+            <input id="did-to" class="mono" placeholder="01FF" maxlength="4" style="max-width:80px">
+          </label>
+        </div>
+        <p class="muted small" id="did-note"></p>
+        <div id="did-progress" class="bar" hidden><i></i></div>
+        <p class="muted small mono" id="did-status"></p>
+      </div>
+      <div id="did-out"></div>
     </section>
 
     <!-- ΥΓΕΙΑ -->
