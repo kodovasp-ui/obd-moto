@@ -29,6 +29,9 @@ import {
 import { PROTOCOLS, protocolInfo, sweepProtocols, CAN_ONLY } from './protocols.js';
 import { decodeVin } from './vin.js';
 import { analyzeBattery, HOWTO } from './battery.js';
+import {
+  estimatePower, bestPull, VEHICLE_KINDS, HOWTO as DYNO_HOWTO,
+} from './dyno.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -554,6 +557,69 @@ function kbCard(code, open = false) {
   }
   d.append(src);
   return d;
+}
+
+// ---------------------------------------------------------------- εκτίμηση ισχύος
+function runDyno() {
+  const box = $('dyno-out');
+  box.replaceChildren();
+  const rows = tripSession()?.rows || [];
+  const pull = bestPull(rows);
+  if (!pull) {
+    box.append(el('p', 'empty',
+      'Δεν βρέθηκε τμήμα συνεχούς επιτάχυνσης (τουλάχιστον 3 s και +20 km/h) στην καταγραφή.'));
+    const ol = el('ol', 'small muted');
+    for (const s of DYNO_HOWTO) ol.append(el('li', '', s));
+    box.append(el('p', 'small', 'Πώς να το μετρήσεις:'), ol);
+    return;
+  }
+
+  const k = VEHICLE_KINDS[$('dyno-kind').value];
+  const r = estimatePower(pull.rows, {
+    mass: Number($('dyno-mass').value) || k.mass,
+    riderMass: Number($('dyno-rider').value) || 0,
+    cda: k.cda, crr: k.crr,
+    gradePct: Number($('dyno-grade').value) || 0,
+  });
+  if (!r.ok) { box.append(el('p', 'small', r.reason)); return; }
+
+  const p = r.peak;
+  const dl = el('dl', 'kv');
+  const add = (a, b) => dl.append(el('dt', '', a), el('dd', '', b));
+  add('Τμήμα', `${pull.dur.toFixed(1)} s · +${pull.gain.toFixed(0)} km/h · ${r.hz.toFixed(1)} δείγματα/s`);
+  add('Μέγιστη ισχύς στον τροχό', `${p.pWheel.toFixed(1)} kW (${r.peakHp.toFixed(0)} hp)`);
+  add('Στα', `${p.kmh.toFixed(0)} km/h${p.rpm ? ` · ${p.rpm.toFixed(0)} rpm` : ''}`);
+  if (p.torque) add('Ροπή στον κινητήρα', `${p.torque.toFixed(0)} Nm (κάτω όριο — αγνοεί τις απώλειες μετάδοσης)`);
+  add('Συνολική μάζα', `${r.mass.toFixed(0)} kg`);
+  add('Από αυτά σε αντιστάσεις', `${(p.pAero + p.pRoll).toFixed(1)} kW (αέρας ${p.pAero.toFixed(1)}, κύλιση/κλίση ${p.pRoll.toFixed(1)})`);
+  box.append(dl);
+
+  for (const w of r.warnings) box.append(el('p', 'small warn-txt', '⚠ ' + w));
+
+  box.append(el('p', 'muted small',
+    'Η ισχύς είναι ΣΤΟΝ ΤΡΟΧΟ: στον στρόφαλο είναι περίπου 10–15% μεγαλύτερη. '
+    + 'Το νούμερο εξαρτάται άμεσα από τη μάζα και τον συντελεστή οπισθέλκουσας που δηλώθηκαν — '
+    + 'λάθος μάζα κατά 10% σημαίνει λάθος ισχύ κατά περίπου 10%.'));
+
+  // Σύντομη καμπύλη: ισχύς ανά 10 km/h, για να φαίνεται πού «τραβάει».
+  const buckets = new Map();
+  for (const pt of r.points) {
+    const b = Math.round(pt.kmh / 10) * 10;
+    if (!buckets.has(b) || buckets.get(b) < pt.pWheel) buckets.set(b, pt.pWheel);
+  }
+  if (buckets.size > 2) {
+    const t = el('table');
+    const hr = el('tr');
+    hr.append(el('th', '', 'km/h'), el('th', '', 'kW στον τροχό'), el('th', '', 'hp'));
+    t.append(hr);
+    for (const b of [...buckets.keys()].sort((a, c) => a - c)) {
+      const tr = el('tr');
+      tr.append(el('td', 'mono', String(b)), el('td', 'mono', buckets.get(b).toFixed(1)),
+        el('td', 'mono', (buckets.get(b) / 0.7457).toFixed(0)));
+      t.append(tr);
+    }
+    box.append(t);
+  }
 }
 
 function renderKbCoverage() {
@@ -1858,6 +1924,14 @@ function init() {
     renderProtoHint();
   };
   renderProtoHint();
+
+  for (const [k, v] of Object.entries(VEHICLE_KINDS)) {
+    const o = el('option', '', v.label);
+    o.value = k;
+    $('dyno-kind').append(o);
+  }
+  $('dyno-kind').onchange = () => { $('dyno-mass').value = VEHICLE_KINDS[$('dyno-kind').value].mass; };
+  $('btn-dyno').onclick = runDyno;
 
   $('btn-ref-clear').onclick = () => setRef(null);
   $('btn-batt').onclick = runBattery;

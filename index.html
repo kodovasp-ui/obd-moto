@@ -421,6 +421,32 @@
           <b>Μόνο σε κλειστή πίστα, όχι στον δρόμο.</b></p>
         <div id="perf-out"><p class="empty">Πάτα Υπολογισμός πιο πάνω.</p></div>
       </div>
+
+      <div class="card">
+        <h2>Εκτίμηση ισχύος <span class="pill warn">ενδεικτικό</span></h2>
+        <p class="muted small">Από την επιτάχυνση: <code>P = v · (m·a + αεροδυναμική + κύλιση)</code>.
+          <b>Δεν είναι δυναμόμετρο.</b> Εξαρτάται από τη μάζα που θα δηλώσεις, από εκτιμώμενο
+          συντελεστή οπισθέλκουσας, από τον άνεμο, την κλίση του δρόμου και από τη δειγματοληψία
+          του OBD. Χρήσιμο για <b>σύγκριση πριν/μετά</b>, όχι για απόλυτο νούμερο.</p>
+        <div class="toolbar">
+          <button id="btn-dyno" class="primary">Υπολογισμός</button>
+          <label class="small">Όχημα:
+            <select id="dyno-kind" aria-label="Είδος οχήματος"></select>
+          </label>
+        </div>
+        <div class="toolbar">
+          <label class="small">Μάζα οχήματος (kg):
+            <input id="dyno-mass" type="number" min="50" max="4000" step="5" value="230" style="max-width:95px">
+          </label>
+          <label class="small">Αναβάτης / επιβάτες (kg):
+            <input id="dyno-rider" type="number" min="0" max="500" step="5" value="85" style="max-width:85px">
+          </label>
+          <label class="small">Κλίση δρόμου (%):
+            <input id="dyno-grade" type="number" min="-15" max="15" step="0.5" value="0" style="max-width:80px">
+          </label>
+        </div>
+        <div id="dyno-out"></div>
+      </div>
     </section>
 
     <!-- ΚΟΝΣΟΛΑ -->
