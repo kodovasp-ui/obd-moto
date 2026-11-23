@@ -194,6 +194,23 @@
         <span class="muted small" id="report-src"></span>
       </div>
       <p class="muted small">Για πλήρη αναφορά: ζεστός κινητήρας, ~30 s ρελαντί και ~30 s στις 2500 rpm, και ανάγνωση κωδικών πριν.</p>
+
+      <div class="card">
+        <h2>Μπαταρία και φόρτιση</h2>
+        <p class="muted small">Από την τάση της τρέχουσας καταγραφής: κατάσταση στην ηρεμία,
+          βύθισμα στη μίζα και τάση φόρτισης. <b>Δεν είναι τεστ φορτίου</b> — χωρίς όργανο δεν
+          μετριούνται η εσωτερική αντίσταση και τα CCA.</p>
+        <div class="toolbar">
+          <button id="btn-batt" class="primary">Ανάλυση</button>
+          <label class="small">Τύπος:
+            <select id="batt-chem" aria-label="Τύπος μπαταρίας">
+              <option value="lead">Μολύβδου–οξέος</option>
+              <option value="lithium">Λιθίου (LiFePO4)</option>
+            </select>
+          </label>
+        </div>
+        <div id="batt-out"></div>
+      </div>
       <div id="report-out"></div>
       <div id="compare-out"></div>
 
@@ -289,6 +306,19 @@
     <!-- ΟΧΗΜΑ -->
     <section id="tab-info" class="tab" hidden>
       <dl class="kv" id="info-out"><p class="empty">Σύνδεσου για στοιχεία οχήματος.</p></dl>
+
+      <div class="card">
+        <h2>Ανάλυση VIN</h2>
+        <p class="muted small">Ο VIN (ISO 3779) κωδικοποιεί χώρα, κατασκευαστή, έτος μοντέλου,
+          εργοστάσιο και αύξοντα αριθμό. Η ανάλυση γίνεται <b>εντελώς τοπικά</b>, χωρίς δίκτυο.
+          Το μέρος 4–8 (μοντέλο, κινητήρας) είναι ιδιωτικό κάθε κατασκευαστή και
+          <b>δεν το μαντεύουμε</b>.</p>
+        <div class="toolbar">
+          <input id="vin-in" class="mono" placeholder="17 χαρακτήρες" maxlength="17" aria-label="VIN">
+          <button id="btn-vin">Ανάλυση</button>
+        </div>
+        <div id="vin-out"></div>
+      </div>
 
       <div class="card">
         <h2>Γκαράζ</h2>
