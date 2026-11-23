@@ -45,12 +45,19 @@ export class Elm {
     return p;
   }
 
-  async init() {
+  /**
+   * protocol: '0' = αυτόματη ανίχνευση (προεπιλογή), αλλιώς ένα από τα 1–C του ELM327.
+   * Τα non-CAN με 5 baud init θέλουν ~3 s μόνο για να ξεκινήσουν, γι' αυτό
+   * το 0100 παίρνει μεγαλύτερο timeout όταν δεν είμαστε σε αυτόματο CAN.
+   */
+  async init({ protocol = '0' } = {}) {
     const info = {};
     info.elm = (await this.cmd('ATZ', { timeout: 5000 })).join(' ');
-    for (const c of ['ATE0', 'ATL0', 'ATS1', 'ATH0', 'ATAT1', 'ATSP0']) await this.cmd(c);
+    for (const c of ['ATE0', 'ATL0', 'ATS1', 'ATH0', 'ATAT1', 'ATSP' + protocol]) await this.cmd(c);
     info.voltage = (await this.cmd('ATRV')).join(' ');
-    await this.cmd('0100', { timeout: 10000 });
+    info.forced = protocol !== '0' ? protocol : null;
+    const probe = await this.cmd('0100', { timeout: 15000 });
+    info.responded = probe.some((l) => /^41\s*00/i.test(l.trim()));
     info.protocol = (await this.cmd('ATDP')).join(' ').replace(/^AUTO,\s*/i, '');
     info.protocolNum = (await this.cmd('ATDPN')).join('').replace(/^A/, '');
     this.isCan = '6789ABC'.includes(info.protocolNum.slice(-1));

@@ -25,6 +25,7 @@ import * as TH from './theme.js';
 import {
   DID_RANGES, didList, rangeCount, scanDids, describeValue,
 } from './did-scan.js';
+import { PROTOCOLS, protocolInfo, sweepProtocols, CAN_ONLY } from './protocols.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -50,6 +51,7 @@ const S = {
   chatLive: { on: false, busy: false, timer: null, abort: null, msgs: [] },
   ecus: null, scan: null, // σάρωση μονάδων
   did: null, dids: null, // σαρωτής DID (UDS 22)
+  proto: null, isCan: true, // πρωτόκολλο σύνδεσης
   m06: null, m06run: null, // on-board tests (Mode 06)
   vehicle: null, // ενεργό προφίλ γκαράζ
 };
@@ -101,8 +103,34 @@ async function connect(kind) {
     S.transport = t;
     S.elm = new Elm(t, { log });
     setStatus(`Αρχικοποίηση ${t.name}…`);
-    const info = await S.elm.init();
+    // Δύο διαφορετικά πράγματα: η ΕΠΙΛΟΓΗ του χρήστη (obd.protocol) και ό,τι
+    // βρήκε μόνη της η σάρωση την προηγούμενη φορά (obd.protocol.auto). Το
+    // δεύτερο είναι μόνο υπόδειξη: αν δεν πιάσει, ξανακάνουμε σάρωση — αλλιώς
+    // το ίδιο κινητό δεν θα συνδεόταν ποτέ ξανά σε CAN όχημα.
+    const want = store.get('obd.protocol', '0');
+    const start = want === '0' ? store.get('obd.protocol.auto', '0') : want;
+    let info = await S.elm.init({ protocol: start });
     if (!/ELM/i.test(info.elm)) throw new Error('Ο adapter δεν απάντησε στο ATZ.');
+
+    // Το ATSP0 αποτυγχάνει συχνά σε non-CAN με φτηνούς adapter: δοκιμάζουμε
+    // τότε τα πρωτόκολλα ένα-ένα, ώστε να πιάνονται και οχήματα πριν το CAN.
+    if (!info.responded && want === '0') {
+      setStatus('Δοκιμή πρωτοκόλλων…');
+      const hit = await sweepProtocols(S.elm, {
+        onProgress: ({ name }) => setStatus('Δοκιμή: ' + name),
+      });
+      if (hit) {
+        info = await S.elm.init({ protocol: hit.num });
+        banner(`${start === '0' ? 'Η αυτόματη ανίχνευση' : `Το ${protocolInfo(start).name}`} δεν απάντησε·`
+          + ` βρέθηκε ${hit.info.name}. Θα δοκιμάζεται πρώτο την επόμενη φορά.`);
+        store.set('obd.protocol.auto', hit.num);
+      } else {
+        store.set('obd.protocol.auto', '0');
+      }
+    }
+    S.proto = protocolInfo(info.protocolNum) || protocolInfo(info.forced);
+    S.isCan = S.proto ? S.proto.can === true : true;
+    renderProtoHint();
     // Το όχημα δηλώνει μόνο του τι υποστηρίζει· κρατάμε έξω τα bitmap PID υποδομής.
     S.supported = (await S.elm.supportedPids()).filter((p) => !isMeta(p));
     S.vin = await S.elm.readVin();
@@ -1013,6 +1041,7 @@ function renderM06(groups) {
 async function runM06() {
   if (!S.elm) return banner('Σύνδεσε πρώτα.', true);
   if (S.m06run?.running) return;
+  if (!S.isCan) return banner(CAN_ONLY.m06 + ' Το όχημα συνδέθηκε με ' + (S.proto?.name || 'μη-CAN πρωτόκολλο') + '.', true);
   if (S.live) { S.live = false; await new Promise((r) => setTimeout(r, 400)); }
   S.m06run = { running: true, stop: false };
   $('btn-m06').disabled = true;
@@ -1145,6 +1174,15 @@ function renderScan(list) {
     }
     box.append(card);
   }
+}
+
+/** Δείχνει ποιο πρωτόκολλο θυμήθηκε η σάρωση, ώστε να μην είναι κρυφό. */
+function renderProtoHint() {
+  const auto = store.get('obd.protocol.auto', '0');
+  const p = auto !== '0' && protocolInfo(auto);
+  $('proto-hint').textContent = p
+    ? `Τελευταία φορά η σάρωση βρήκε ${p.name} — θα δοκιμαστεί πρώτο. Αν δεν πιάσει, ξανασαρώνει.`
+    : '';
 }
 
 // ---------------------------------------------------------------- σαρωτής DID
@@ -1284,6 +1322,7 @@ function renderDid(res, ecu, rangeLabel) {
 async function runDidScan() {
   if (!S.elm) return banner('Σύνδεσε τη μοτοσυκλέτα ή πάτα Demo πρώτα.', true);
   if (S.did?.running) return;
+  if (!S.isCan) return banner(CAN_ONLY.did + ' Το όχημα συνδέθηκε με ' + (S.proto?.name || 'μη-CAN πρωτόκολλο') + '.', true);
   if (S.live) { S.live = false; await new Promise((r) => setTimeout(r, 400)); }
 
   let dids; let custom;
@@ -1327,6 +1366,7 @@ async function runDidScan() {
 async function runScan() {
   if (!S.elm) return banner('Σύνδεσε τη μοτοσυκλέτα ή πάτα Demo πρώτα.', true);
   if (S.scan?.running) return;
+  if (!S.isCan) return banner(CAN_ONLY.scan + ' Το όχημα συνδέθηκε με ' + (S.proto?.name || 'μη-CAN πρωτόκολλο') + '.', true);
   if (S.live) { S.live = false; await new Promise((r) => setTimeout(r, 400)); }
   S.scan = { running: true, stop: false };
   $('btn-scan').disabled = true;
@@ -1626,6 +1666,31 @@ function init() {
     if (tripSession()?.rows?.length && !$('trip-out').querySelector('.empty')) runTrip();
     requestDraw();
     banner(`Μονάδες: ${U.getSystem() === 'metric' ? 'μετρικό' : 'imperial'}. Τα αποθηκευμένα δεδομένα μένουν μετρικά.`);
+  };
+
+  // --- πρωτόκολλο
+  for (const p of PROTOCOLS) {
+    const o = el('option', '', p.n === '0' ? p.name : `${p.n}. ${p.name}${p.years !== '—' ? ` · ${p.years}` : ''}`);
+    o.value = p.n;
+    $('proto-sel').append(o);
+  }
+  $('proto-sel').value = store.get('obd.protocol', '0');
+  $('proto-sel').onchange = () => {
+    const n = $('proto-sel').value;
+    store.set('obd.protocol', n);
+    if (n !== '0') store.set('obd.protocol.auto', '0'); // η ρητή επιλογή ακυρώνει το θυμητό
+    const p = protocolInfo(n);
+    banner(n === '0'
+      ? 'Πρωτόκολλο: αυτόματη ανίχνευση. Ισχύει από την επόμενη σύνδεση.'
+      : `Πρωτόκολλο: ${p.name}. Ισχύει από την επόμενη σύνδεση.`);
+    renderProtoHint();
+  };
+  renderProtoHint();
+
+  $('sim-proto').value = localStorage.getItem('obd.sim.proto') || '6';
+  $('sim-proto').onchange = () => {
+    try { localStorage.setItem('obd.sim.proto', $('sim-proto').value); } catch { /* χωρίς αποθήκευση */ }
+    banner('Ο προσομοιωτής θα χρησιμοποιήσει το νέο πρωτόκολλο στην επόμενη σύνδεση Demo.');
   };
 
   // --- θέμα εμφάνισης
