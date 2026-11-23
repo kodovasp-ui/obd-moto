@@ -160,6 +160,11 @@ export class SimTransport {
     const t = (performance.now() - this.t0) / 1000;
     const coolant = Math.min(92, 25 + t * 1.2);
 
+    // 0–4 s κλειδί ON με σβηστό κινητήρα, 4–5.5 s μίζα: έτσι δοκιμάζεται και
+    // ο έλεγχος μπαταρίας (τάση ηρεμίας και βύθισμα στη μίζα).
+    const keyOn = t < 4;
+    const cranking = t >= 4 && t < 5.5;
+
     let speed; let throttle; let load;
     if (t < 12) {                       // ρελαντί
       speed = 0; throttle = 6.7; load = 28 + Math.random();
@@ -175,8 +180,10 @@ export class SimTransport {
     }
     speed = Math.max(0, Math.min(130, speed));
     const accel = t >= 12 && t < 28;
-    const rpm = (speed > 1 ? 1500 + speed * 52 : 1500 + Math.max(0, 300 - t * 5))
+    let rpm = (speed > 1 ? 1500 + speed * 52 : 1500 + Math.max(0, 300 - t * 5))
       + (Math.random() - 0.5) * 120;
+    if (keyOn) rpm = 0;
+    else if (cranking) rpm = 240 + Math.random() * 40;
     const o2 = coolant > 50 ? (Math.sin(t * 6) > 0 ? 0.75 + Math.random() * 0.15 : 0.1 + Math.random() * 0.1) : 0.45;
 
     return {
@@ -185,7 +192,12 @@ export class SimTransport {
       iat: 20 + t * 0.05,
       timing: accel ? 24 + Math.random() : speed > 1 ? 18 + Math.random() * 2 : 1 + Math.random() * 3.5,
       stft: coolant > 50 ? (Math.random() - 0.5) * 6 : 0, ltft: -2.3,
-      o2a: o2, o2b: 0.78 + Math.random() * 0.03, volt: coolant > 30 ? 14 + Math.random() * 0.2 : 12.3,
+      o2a: o2,
+      o2b: 0.78 + Math.random() * 0.03,
+      // 12.6 V στην ηρεμία, βουτιά στη μίζα, μετά φόρτιση από τον αλτερνέιτορ.
+      volt: keyOn ? 12.62 - Math.random() * 0.04
+        : cranking ? 10.1 + Math.random() * 0.3
+          : 14.1 + Math.random() * 0.25,
       maf: accel ? 28 + Math.random() * 3 : speed > 1 ? 9.5 + Math.random() : 2.5 + Math.random() * 0.3,
       lam: coolant > 50 ? (accel ? 0.9 : 1) + (Math.random() - 0.5) * 0.04 : 1.18,
       cat: Math.min(620, 30 + t * 11),

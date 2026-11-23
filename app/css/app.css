@@ -161,7 +161,7 @@ button.icon { padding: 8px 10px; min-width: 42px; font-size: 16px; line-height: 
 #m06-progress { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin: 4px 0 6px; }
 #m06-progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 #m06-status:empty { display: none; }
-#m06-out h2, #readiness-out h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#m06-out h2, #readiness-out h3, #batt-out h2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #readiness-out h3 { font-size: 14px; margin: 12px 0 6px; }
 
 /* ---- εκτύπωση / PDF */

@@ -9,7 +9,7 @@ const SHELL = [
   'js/transport-ble.js', 'js/transport-sim.js', 'js/chart.js', 'js/session.js', 'js/db.js',
   'js/health.js', 'js/dtc-kb.js', 'js/assistant.js', 'js/ecu-db.js',
   'js/dtc-generic.js', 'js/ecu-scan.js', 'js/mode06.js', 'js/readiness.js',
-  'js/units.js', 'js/garage.js', 'js/trip.js', 'js/alerts.js', 'js/theme.js', 'js/did-scan.js', 'js/protocols.js',
+  'js/units.js', 'js/garage.js', 'js/trip.js', 'js/alerts.js', 'js/theme.js', 'js/did-scan.js', 'js/protocols.js', 'js/vin.js', 'js/battery.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
 ];
 

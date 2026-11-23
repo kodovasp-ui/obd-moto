@@ -26,6 +26,8 @@ import {
   DID_RANGES, didList, rangeCount, scanDids, describeValue,
 } from './did-scan.js';
 import { PROTOCOLS, protocolInfo, sweepProtocols, CAN_ONLY } from './protocols.js';
+import { decodeVin } from './vin.js';
+import { analyzeBattery, HOWTO } from './battery.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -1585,6 +1587,106 @@ function renderInfo() {
     ['Τάση', i.voltage], ['VIN', S.vin || '—'], ['PID (01)', S.supported.join(' ') || '—'],
   ];
   for (const [k, v] of rows) box.append(el('dt', '', k), el('dd', '', v));
+  if (S.vin && !$('vin-in').value) { $('vin-in').value = S.vin; renderVin(); }
+}
+
+function runBattery() {
+  const box = $('batt-out');
+  box.replaceChildren();
+  const rows = tripSession()?.rows || [];
+  if (!rows.length) {
+    box.append(el('p', 'empty', 'Δεν υπάρχει καταγραφή. Ξεκίνα Live ή φόρτωσε μια συνεδρία από το Ιστορικό.'));
+    return;
+  }
+  const a = analyzeBattery(rows, $('batt-chem').value);
+  if (!a.ok) {
+    box.append(el('p', 'small', a.reason));
+    const ol = el('ol', 'small muted');
+    for (const s of HOWTO) ol.append(el('li', '', s));
+    box.append(el('p', 'small', 'Για πλήρη έλεγχο:'), ol);
+    return;
+  }
+
+  const pill = (lv, t) => el('span', `pill ${lv === 'full' || lv === 'ok' ? 'ok' : lv === 'warn' ? 'warn' : 'bad'}`, t);
+  const line = (title, body, badge) => {
+    const p = el('div', 'card');
+    const h = el('h2', '', title);
+    if (badge) h.append(badge);
+    p.append(h, el('p', 'small', body));
+    return p;
+  };
+
+  box.append(el('p', 'muted small', `Πηγή τάσης: ${a.source} · ${a.chem}`));
+
+  if (a.rangeOnly) {
+    const c = el('div', 'card');
+    c.append(el('h2', '', 'Μόνο εύρος τάσης'));
+    c.append(el('p', 'small',
+      `${a.rangeOnly.min.toFixed(2)} – ${a.rangeOnly.max.toFixed(2)} V (μέση ${a.rangeOnly.avg.toFixed(2)} V).`));
+    c.append(el('p', 'small warn-txt',
+      'Χωρίς τις στροφές (PID 0C) δεν ξέρουμε πότε ο κινητήρας δούλευε, οπότε δεν βγαίνει '
+      + 'συμπέρασμα: 14.3 V είναι άριστη φόρτιση αλλά αδύνατη τάση ηρεμίας. '
+      + 'Πρόσθεσε το PID 0C στο ταμπλό και ξανακαταγράψε.'));
+    box.append(c);
+    const ol = el('ol', 'small muted');
+    for (const s of HOWTO) ol.append(el('li', '', s));
+    box.append(ol);
+    return;
+  }
+
+  if (a.rest) {
+    const lbl = { full: 'OK', ok: 'OK', warn: 'Χαμηλή', bad: 'Άδεια' }[a.rest.level];
+    box.append(line('Στην ηρεμία', `${a.rest.v.toFixed(2)} V — ${a.rest.text}`, pill(a.rest.level, lbl)));
+  }
+  if (a.crank) box.append(line('Στη μίζα', a.crank.text, pill(a.crank.level, a.crank.level === 'ok' ? 'OK' : 'Αδύναμη')));
+  if (a.charge) {
+    const c = line('Φόρτιση', a.charge.text, pill(a.charge.level, a.charge.level === 'ok' ? 'OK' : 'Προσοχή'));
+    c.append(el('p', 'muted small',
+      `Μέση ${a.charge.avg.toFixed(2)} V · ελάχιστη ${a.charge.min.toFixed(2)} · μέγιστη ${a.charge.max.toFixed(2)} V`));
+    if (a.charge.rippleWarn) c.append(el('p', 'small warn-txt', a.charge.rippleWarn));
+    box.append(c);
+  }
+  if (!a.crank) {
+    box.append(el('p', 'muted small',
+      a.haveRpm
+        ? 'Η καταγραφή δεν περιλαμβάνει εκκίνηση, οπότε δεν ελέγχθηκε το βύθισμα στη μίζα.'
+        : 'Χωρίς στροφές (PID 0C) δεν ξεχωρίζουν οι φάσεις — πρόσθεσέ το στο ταμπλό.'));
+  }
+}
+
+function renderVin() {
+  const box = $('vin-out');
+  box.replaceChildren();
+  const d = decodeVin($('vin-in').value);
+  if (!d) return;
+  if (!d.valid) {
+    box.append(el('p', 'err small', '⚠ ' + d.problem));
+    return;
+  }
+  const dl = el('dl', 'kv');
+  const add = (k, v) => { if (v != null && v !== '') dl.append(el('dt', '', k), el('dd', '', v)); };
+  add('WMI (1–3)', `${d.wmi}${d.maker ? ' — ' + d.maker : ''}`);
+  if (!d.maker) add('Κατασκευαστής', 'άγνωστο WMI — δεν τον μαντεύουμε');
+  add('Χώρα', d.country || d.region || '—');
+  add('Περιγραφή (4–8)', `${d.vds} — ιδιωτικό του κατασκευαστή`);
+  add('Έτος μοντέλου (10)', d.year ? `${d.year}` : '—');
+  add('Εργοστάσιο (11)', d.plant);
+  add('Αύξων αριθμός (12–17)', d.serial);
+  box.append(dl);
+
+  // Το check digit επιβάλλεται μόνο σε Β. Αμερική και Κίνα. Αλλού η αποτυχία
+  // δεν σημαίνει τίποτα — πολλοί ευρωπαϊκοί VIN βάζουν γέμισμα εκεί.
+  const p = el('p', 'small');
+  if (d.checkOk) {
+    p.append(el('span', 'pill ok', '✓ Το ψηφίο ελέγχου συμφωνεί'));
+  } else if (d.checkRequired) {
+    p.append(el('span', 'pill bad', `✕ Ψηφίο ελέγχου: ${d.checkDigit}, αναμενόταν ${d.checkExpected}`));
+    p.append(el('span', 'muted small', ' — λάθος αντιγραφή ή πλαστός VIN.'));
+  } else {
+    p.append(el('span', 'pill', `Ψηφίο ελέγχου ${d.checkDigit} ≠ ${d.checkExpected}`));
+    p.append(el('span', 'muted small', ' — εκτός Β. Αμερικής και Κίνας δεν επιβάλλεται, οπότε δεν σημαίνει κάτι.'));
+  }
+  box.append(p);
 }
 
 async function sendConsole(ev) {
@@ -1686,6 +1788,13 @@ function init() {
     renderProtoHint();
   };
   renderProtoHint();
+
+  $('btn-batt').onclick = runBattery;
+  $('batt-chem').onchange = () => { if ($('batt-out').children.length) runBattery(); };
+
+  // --- VIN
+  $('btn-vin').onclick = renderVin;
+  $('vin-in').onkeydown = (e) => { if (e.key === 'Enter') renderVin(); };
 
   $('sim-proto').value = localStorage.getItem('obd.sim.proto') || '6';
   $('sim-proto').onchange = () => {
