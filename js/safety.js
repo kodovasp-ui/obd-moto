@@ -3,7 +3,8 @@
 // (το tests/test_safety.py ελέγχει ότι συμφωνούν).
 
 // --- SAFETY-RULES-BEGIN (κράτα ίδιο με tools/obd_safety.py)
-export const OBD_READ_MODES = ['01', '02', '03', '06', '07', '09', '0A'];
+// 05 = τεστ αισθητήρων λάμδα (μόνο ανάγνωση, σε non-CAN οχήματα — αντί του mode 06).
+export const OBD_READ_MODES = ['01', '02', '03', '05', '06', '07', '09', '0A'];
 export const UDS_READ_SERVICES = ['19', '22'];
 export const EXACT_ALLOWED = ['1001'];
 export const CLEAR_SERVICES = ['04', '14'];
@@ -15,6 +16,9 @@ export const AT_PATTERNS = [
   'CRA[0-9A-F]{3}', 'CRA[0-9A-F]{8}', 'CRA', 'FCSH[0-9A-F]{3}', 'FCSH[0-9A-F]{8}',
   'FCSD[0-9A-F]{2,10}', 'FCSM[012]',
   'CF[0-9A-F]{3}', 'CM[0-9A-F]{3}',
+  // J1939 (φορτηγά/αγροτικά): μόνο παρακολούθηση — DM1 = ενεργοί κωδικοί,
+  // MP = παρακολούθηση συγκεκριμένου PGN. Καμία μετάδοση/εγγραφή στον δίαυλο.
+  'DM1', 'MP[0-9A-F]{4}', 'MP[0-9A-F]{4}[0-9A-F]', 'JHF[01]', 'JTM[15]',
 ];
 // --- SAFETY-RULES-END
 

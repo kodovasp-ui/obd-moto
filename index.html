@@ -129,6 +129,21 @@
         <button id="btn-clear" class="danger" disabled>Σβήσιμο κωδικών…</button>
       </div>
       <div id="dtc-out"><p class="empty">Δεν έχουν διαβαστεί κωδικοί.</p></div>
+
+      <div class="card" id="j1939-card" hidden>
+        <h2>Κωδικοί J1939 <span class="pill">φορτηγά / αγροτικά</span></h2>
+        <p class="muted small">Τα βαρέα οχήματα δεν μιλούν OBD-II: οι ενεργοί κωδικοί έρχονται
+          στο μήνυμα <b>DM1</b>. Παρακολουθούμε τον δίαυλο για λίγα δευτερόλεπτα και διαβάζουμε
+          <b>SPN</b> (τι), <b>FMI</b> (είδος βλάβης) και πλήθος εμφανίσεων. <b>Μόνο ανάγνωση.</b></p>
+        <div class="toolbar">
+          <button id="btn-j1939" class="primary" disabled>Ανάγνωση DM1</button>
+          <label class="small">Ακρόαση (s):
+            <input id="j1939-secs" type="number" min="1" max="10" step="1" value="3" style="max-width:70px">
+          </label>
+        </div>
+        <div id="j1939-out"></div>
+      </div>
+
       <div class="card">
         <h2>Βάση γνώσης κωδικών</h2>
         <p class="muted small" id="kb-coverage"></p>
@@ -236,6 +251,16 @@
         </div>
         <div id="batt-out"></div>
       </div>
+
+      <div class="card" id="m05-card" hidden>
+        <h2>Τεστ αισθητήρων λάμδα (mode 05) <span class="pill">non-CAN</span></h2>
+        <p class="muted small">Παλιότερα οχήματα (ISO 9141-2, KWP2000) δίνουν τα αποτελέσματα των
+          τεστ λάμδα στο mode 05 — τάσεις κατωφλίου και χρόνους εναλλαγής. (Στα CAN οχήματα
+          αυτά βρίσκονται στα on-board tests / mode 06.) <b>Μόνο ανάγνωση.</b></p>
+        <button id="btn-m05" class="primary" disabled>Ανάγνωση mode 05</button>
+        <div id="m05-out"></div>
+      </div>
+
       <div id="report-out"></div>
       <div id="compare-out"></div>
 
@@ -387,6 +412,7 @@
               <option value="6">CAN 11/500 (νεότερο όχημα)</option>
               <option value="5">KWP2000 fast init — το αυτόματο αποτυγχάνει</option>
               <option value="3">ISO 9141-2 (παλιό όχημα)</option>
+              <option value="A">J1939 (φορτηγό / αγροτικό)</option>
             </select>
           </label>
         </div>

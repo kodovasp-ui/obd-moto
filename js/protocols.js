@@ -28,10 +28,16 @@ export const PROTOCOLS = [
 
 const BY_N = Object.fromEntries(PROTOCOLS.map((p) => [p.n, p]));
 
-/** Το πρωτόκολλο από τον αριθμό του ATDPN (χωρίς το «A» της αυτόματης). */
+/**
+ * Το πρωτόκολλο από τον αριθμό του ATDPN. Το σκέτο «A» είναι το J1939· το «A»
+ * ΜΠΡΟΣΤΑ από άλλο ψηφίο (π.χ. «A6») είναι το πρόθεμα της αυτόματης ανίχνευσης
+ * και αφαιρείται.
+ */
 export function protocolInfo(num) {
   if (!num) return null;
-  return BY_N[String(num).toUpperCase().replace(/^A/, '').slice(-1)] || null;
+  const s = String(num).toUpperCase();
+  const key = s === 'A' ? 'A' : s.replace(/^A/, '').slice(-1);
+  return BY_N[key] || null;
 }
 
 export function isCanNum(num) {

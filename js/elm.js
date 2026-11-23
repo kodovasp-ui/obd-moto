@@ -46,6 +46,40 @@ export class Elm {
   }
 
   /**
+   * Παρακολούθηση (π.χ. J1939 `ATDM1`): ο ELM327 δεν τελειώνει μόνος του, στέλνει
+   * frames συνεχώς ώσπου να λάβει έναν χαρακτήρα. Στέλνουμε την εντολή, μαζεύουμε
+   * frames για `timeout` ms, μετά στέλνουμε ένα σκέτο CR για να σταματήσει (δεν
+   * είναι εντολή — είναι ο τεκμηριωμένος τρόπος εξόδου από monitor mode).
+   */
+  monitor(command, { timeout = 3000 } = {}) {
+    const c = check(command); // περνά από τη whitelist όπως κάθε εντολή
+    const run = async () => {
+      this.buf = '';
+      this.log('>', c);
+      await this.t.write(c + '\r');
+      await new Promise((r) => setTimeout(r, timeout));
+      const raw = this.buf;
+      // Σταμάτημα του monitor και αναμονή για το prompt.
+      const stopped = new Promise((resolve) => {
+        const timer = setTimeout(() => { this.waiter = null; resolve(); }, 1200);
+        this.waiter = () => { clearTimeout(timer); this.waiter = null; resolve(); };
+      });
+      this.buf = '';
+      await this.t.write('\r');
+      await stopped;
+      this.buf = '';
+      const lines = raw.replace(/\r/g, '\n').split('\n')
+        .map((l) => l.replace(/>/g, '').trim())
+        .filter((l) => l && l.replace(/\s/g, '').toUpperCase() !== c && !/^SEARCHING/i.test(l));
+      this.log('<', `${lines.length} γραμμές J1939`);
+      return lines;
+    };
+    const p = this.queue.then(run, run);
+    this.queue = p.catch(() => {});
+    return p;
+  }
+
+  /**
    * protocol: '0' = αυτόματη ανίχνευση (προεπιλογή), αλλιώς ένα από τα 1–C του ELM327.
    * Τα non-CAN με 5 baud init θέλουν ~3 s μόνο για να ξεκινήσουν, γι' αυτό
    * το 0100 παίρνει μεγαλύτερο timeout όταν δεν είμαστε σε αυτόματο CAN.
