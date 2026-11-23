@@ -138,6 +138,26 @@
           <button>Αναζήτηση</button>
         </form>
         <div id="kb-out"></div>
+
+        <details id="user-dtc">
+          <summary class="small">Δικοί σου κωδικοί από το εγχειρίδιο σέρβις</summary>
+          <p class="muted small">Οι ειδικοί κωδικοί κάθε κατασκευαστή δεν είναι δημοσιευμένοι και
+            <b>δεν τους εφευρίσκουμε</b>. Αν τους έχεις από το εγχειρίδιο, φόρτωσέ τους εσύ: μετά
+            εμφανίζονται παντού όπως οι υπόλοιποι, με πηγή «δικό σου αρχείο».
+            Μένουν στη συσκευή σου.</p>
+          <p class="muted small">Μορφή CSV ή TSV, μία γραμμή ανά κωδικό:<br>
+            <code class="mono">P1234,Περιγραφή,Αιτία1;Αιτία2,Βήμα1;Βήμα2</code><br>
+            Οι δύο πρώτες στήλες αρκούν. Γραμμές με <code>#</code> αγνοούνται.</p>
+          <div class="toolbar">
+            <label class="filebtn">Επιλογή αρχείου…
+              <input type="file" id="user-dtc-file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
+            </label>
+            <button id="btn-user-dtc-sample" class="ghost small">Κατέβασε υπόδειγμα</button>
+            <button id="btn-user-dtc-clear" class="danger small" hidden>Διαγραφή όλων</button>
+          </div>
+          <p class="small muted" id="user-dtc-count"></p>
+          <p class="small muted" id="user-dtc-note"></p>
+        </details>
       </div>
     </section>
 
