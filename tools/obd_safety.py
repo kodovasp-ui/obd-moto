@@ -7,7 +7,8 @@ import re
 
 # --- SAFETY-RULES-BEGIN (κράτα ίδιο με app/js/safety.js) ---
 # OBD-II modes ανάγνωσης
-OBD_READ_MODES = ["01", "02", "03", "06", "07", "09", "0A"]
+# 05 = τεστ αισθητήρων λάμδα (μόνο ανάγνωση, σε non-CAN οχήματα — αντί του mode 06).
+OBD_READ_MODES = ["01", "02", "03", "05", "06", "07", "09", "0A"]
 # UDS υπηρεσίες ανάγνωσης (0x19 ReadDTCInformation, 0x22 ReadDataByIdentifier)
 UDS_READ_SERVICES = ["19", "22"]
 # Ακριβείς εντολές που επιτρέπονται (0x10 μόνο default session)
@@ -23,6 +24,9 @@ AT_PATTERNS = [
     r"CRA[0-9A-F]{3}", r"CRA[0-9A-F]{8}", r"CRA", r"FCSH[0-9A-F]{3}", r"FCSH[0-9A-F]{8}",
     r"FCSD[0-9A-F]{2,10}", r"FCSM[012]",
     r"CF[0-9A-F]{3}", r"CM[0-9A-F]{3}",
+    # J1939 (φορτηγά/αγροτικά): μόνο παρακολούθηση — DM1 = ενεργοί κωδικοί,
+    # MP = παρακολούθηση συγκεκριμένου PGN. Καμία μετάδοση/εγγραφή στον δίαυλο.
+    r"DM1", r"MP[0-9A-F]{4}", r"MP[0-9A-F]{4}[0-9A-F]", r"JHF[01]", r"JTM[15]",
 ]
 # --- SAFETY-RULES-END ---
 

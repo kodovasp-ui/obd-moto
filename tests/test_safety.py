@@ -14,8 +14,9 @@ FORBIDDEN = [
     "1101", "2701", "2702",                # reset, security access
     "2EF19001", "2F123403", "3101FF00",    # write DID, IO control, routine
     "3400", "3500", "3601", "3700",        # download/upload/transfer
-    "3D00", "85", "28", "05", "08", "1A",  # write memory, άλλες υπηρεσίες
+    "3D00", "85", "28", "08", "1A",        # write memory, control, άλλες υπηρεσίες
     "0101X", "ATPP0CSV", "ATMA", "ATBRD23", "ATSI", "STPX", "",
+    "ATDM2", "ATMP", "ATMP12",             # J1939: μόνο DM1 και MP με έγκυρο PGN
 ]
 ALLOWED = [
     "0100", "01 0C", "0200", "03", "0600", "07", "0902", "0A",
@@ -26,6 +27,8 @@ ALLOWED = [
     "ATCRA18DAF110", "ATFCSH18DA10F1", "ATSH18DA10F1", "ATSHDA10F1",
     "ATSP7", "ATFCSD300000", "ATFCSM1", "ATCRA",
     "190209", "1902FF", "190A", "22F197",
+    # mode 05 (τεστ λάμδα, non-CAN) και J1939 (παρακολούθηση ενεργών κωδικών)
+    "0500", "0501", "05 01 00", "ATSPA", "ATDM1", "ATMP0100", "ATMPFECA1", "ATJHF0", "ATJTM1",
 ]
 
 

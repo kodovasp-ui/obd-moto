@@ -95,7 +95,13 @@ const SIM_PROTO = {
   3: { name: 'ISO 9141-2', autoOk: true },
   5: { name: 'ISO 14230-4 KWP (fast init)', autoOk: false },
   6: { name: 'ISO 15765-4 (CAN 11/500)', autoOk: true },
+  A: { name: 'SAE J1939 (CAN 29-bit/250k)', autoOk: false },
 };
+
+// Δύο ενεργοί κωδικοί J1939 (DM1, PGN FECA) για δοκιμή: SPN 110 θερμ. ψυκτικού
+// «πολύ ψηλά» (FMI 0) και SPN 100 πίεση λαδιού «πολύ χαμηλά» (FMI 1). Το byte 0x04
+// = κίτρινη προειδοποιητική λυχνία αναμμένη.
+const SIM_DM1 = '18FECA00 04 FF 6E 00 00 03 FF FF\r18FECA00 04 FF 64 00 01 02 FF FF';
 
 const STORED = [0x05, 0x62]; // P0562 τάση συστήματος χαμηλή (demo)
 const PENDING = [0x01, 0x31]; // P0131 λάμδα B1S1 χαμηλή τάση (demo)
@@ -303,8 +309,12 @@ export class SimTransport {
       if (a === 'DP') return SIM_PROTO[this.proto].name;
       if (a === 'DPN') return (this.spSet ? '' : 'A') + this.proto;
       if (a === '@1') return 'SIMULATOR';
+      // J1939: monitor ενεργών κωδικών (DM1). Μόνο όταν είμαστε σε protocol A.
+      if (a === 'DM1') return this.proto === 'A' ? SIM_DM1 : 'NO DATA';
       if (a.startsWith('SP')) {
-        const n = a.slice(2).replace(/^A/, '');
+        // ATSPA (σκέτο) = protocol A, δηλ. J1939. ATSPA6 = auto+6. ATSP6 = protocol 6.
+        const rest = a.slice(2);
+        const n = rest === 'A' ? 'A' : (rest[0] === 'A' ? '0' : rest);
         // ATSP0 = αυτόματο: «πιάνει» μόνο αν το πρωτόκολλο το επιτρέπει.
         this.spSet = n === this.proto ? true : (n === '0' ? SIM_PROTO[this.proto].autoOk : false);
         this.wrongProto = n !== '0' && n !== this.proto;
@@ -321,6 +331,8 @@ export class SimTransport {
 
     const ecu = this.target();
     if (!ecu) return 'NO DATA';
+    // J1939: κανένα OBD mode / UDS στον δίαυλο — τα δεδομένα έρχονται μόνο με DM1 (AT).
+    if (this.proto === 'A') return 'NO DATA';
     if (!this.isCanSim) {
       // ISO 9141-2 / KWP2000: μόνο τα OBD modes, καμία υπηρεσία UDS.
       if (!ecu.engine || /^(10|19|22)/.test(c)) return 'NO DATA';
@@ -350,6 +362,12 @@ export class SimTransport {
     // Το byte πλήθους κωδικών υπάρχει ΜΟΝΟ στο CAN (ISO 15765-4). Στα ISO 9141-2
     // και KWP2000 οι κωδικοί ακολουθούν κατευθείαν το 43/47/4A.
     const n = (count) => (this.isCanSim ? [count] : []);
+    // Mode 05 (τεστ λάμδα) — μόνο σε non-CAN οχήματα (στα CAN ισχύει το mode 06).
+    if (mode === '05' && !this.isCanSim) {
+      if (pid === '00') return '45 00 8F 00 00 00'; // υποστηρίζονται TID 01,05,06,07,08
+      const M05 = { '01': '01 00 A0', '05': '01 00 0A', '06': '01 00 14', '07': '01 00 14', '08': '01 00 96' };
+      return M05[pid] ? `45 ${pid} ${M05[pid]}` : 'NO DATA';
+    }
     if (c === '03') return this.cleared ? bytes(0x43, ...n(0)) : bytes(0x43, ...n(1), ...STORED);
     if (c === '07') return this.cleared ? bytes(0x47, ...n(0)) : bytes(0x47, ...n(1), ...PENDING);
     if (c === '0A') return bytes(0x4a, ...n(0));

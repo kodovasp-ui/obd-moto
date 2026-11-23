@@ -27,6 +27,8 @@ import {
   DID_RANGES, didList, rangeCount, scanDids, describeValue,
 } from './did-scan.js';
 import { PROTOCOLS, protocolInfo, sweepProtocols, CAN_ONLY } from './protocols.js';
+import { readJ1939 } from './j1939.js';
+import { readMode05 } from './mode05.js';
 import { decodeVin } from './vin.js';
 import { analyzeBattery, HOWTO } from './battery.js';
 import {
@@ -57,7 +59,7 @@ const S = {
   chatLive: { on: false, busy: false, timer: null, abort: null, msgs: [] },
   ecus: null, scan: null, // σάρωση μονάδων
   did: null, dids: null, // σαρωτής DID (UDS 22)
-  proto: null, isCan: true, // πρωτόκολλο σύνδεσης
+  proto: null, isCan: true, isJ1939: false, // πρωτόκολλο σύνδεσης
   ref: null, // συνεδρία αναφοράς για σύγκριση στα γραφήματα
   m06: null, m06run: null, // on-board tests (Mode 06)
   vehicle: null, // ενεργό προφίλ γκαράζ
@@ -93,7 +95,7 @@ function setStatus(text, on) {
 }
 function setConnected(on) {
   for (const id of ['btn-live', 'btn-dtc', 'btn-clear', 'console-in', 'console-send', 'btn-rec', 'btn-ecu',
-    'btn-pids', 'pid-status-read', 'btn-scan', 'btn-m06', 'btn-readiness', 'btn-did']) $(id).disabled = !on;
+    'btn-pids', 'pid-status-read', 'btn-scan', 'btn-m06', 'btn-readiness', 'btn-did', 'btn-j1939', 'btn-m05']) $(id).disabled = !on;
   $('btn-connect').textContent = on ? 'Αποσύνδεση' : 'Σύνδεση BLE';
   $('btn-demo').disabled = on;
 }
@@ -136,7 +138,13 @@ async function connect(kind) {
       }
     }
     S.proto = protocolInfo(info.protocolNum) || protocolInfo(info.forced);
-    S.isCan = S.proto ? S.proto.can === true : true;
+    // Το J1939 είναι μεν CAN, αλλά δεν υποστηρίζει UDS/ISO-TP: η σάρωση μονάδων,
+    // ο σαρωτής DID και τα on-board tests δεν ισχύουν εκεί — έχει δικό του δρόμο (DM1).
+    S.isCan = S.proto ? (S.proto.can === true && S.proto.n !== 'A') : true;
+    S.isJ1939 = S.proto?.n === 'A';
+    $('j1939-card').hidden = !S.isJ1939;
+    // Το mode 05 (τεστ λάμδα) έχει νόημα μόνο σε non-CAN οχήματα.
+    $('m05-card').hidden = S.isCan || S.isJ1939;
     renderProtoHint();
     // Το όχημα δηλώνει μόνο του τι υποστηρίζει· κρατάμε έξω τα bitmap PID υποδομής.
     S.supported = (await S.elm.supportedPids()).filter((p) => !isMeta(p));
@@ -656,6 +664,104 @@ async function importUserDtcs(file) {
   } catch (e) {
     note.className = 'small err';
     note.textContent = 'Δεν διαβάστηκε το αρχείο: ' + e.message;
+  }
+}
+
+// ---------------------------------------------------------------- mode 05
+async function runMode05() {
+  if (!S.elm) return;
+  const box = $('m05-out');
+  box.replaceChildren(el('p', 'muted small', 'Ανάγνωση…'));
+  $('btn-m05').disabled = true;
+  try {
+    const res = await readMode05(S.elm);
+    box.replaceChildren();
+    if (!res.ok) {
+      box.append(el('p', 'empty',
+        'Το όχημα δεν υποστηρίζει mode 05 (συνηθισμένο — στα περισσότερα το αντικατέστησε το mode 06).'));
+      return;
+    }
+    const t = el('table');
+    const hr = el('tr');
+    hr.append(el('th', '', 'Αισθητήρας'), el('th', '', 'Μέτρηση'), el('th', '', 'Τιμή'));
+    t.append(hr);
+    for (const r of res.results) {
+      const tr = el('tr');
+      const sh = U.displayExact(r.value, r.unit, r.dec);
+      tr.append(el('td', 'mono', r.o2), el('td', 'small', r.name),
+        el('td', 'mono', `${sh.v.toFixed(sh.dec)} ${sh.unit}`.trim()));
+      t.append(tr);
+    }
+    box.append(t);
+    box.append(el('p', 'muted small',
+      'Οι χρόνοι εναλλαγής δείχνουν πόσο γρήγορα αποκρίνεται ο αισθητήρας — μεγάλοι χρόνοι '
+      + 'σημαίνουν «τεμπέλης» ή γερασμένος αισθητήρας λάμδα.'));
+  } catch (e) {
+    log('!', e.message);
+    box.replaceChildren(el('p', 'err small', 'Αποτυχία: ' + e.message));
+  } finally {
+    $('btn-m05').disabled = !S.elm;
+  }
+}
+
+// ---------------------------------------------------------------- J1939
+async function runJ1939() {
+  if (!S.elm || !S.isJ1939) return;
+  if (S.live) { S.live = false; await new Promise((r) => setTimeout(r, 400)); }
+  const box = $('j1939-out');
+  box.replaceChildren(el('p', 'muted small', 'Ακρόαση του διαύλου…'));
+  $('btn-j1939').disabled = true;
+  try {
+    const secs = Math.min(10, Math.max(1, Number($('j1939-secs').value) || 3));
+    const res = await readJ1939(S.elm, { seconds: secs });
+    box.replaceChildren();
+    if (!res.raw) {
+      box.append(el('p', 'empty',
+        'Δεν ακούστηκε κίνηση στον δίαυλο. Είναι το όχημα J1939 και ο κινητήρας σε λειτουργία;'));
+      return;
+    }
+    // Λυχνίες
+    const allLamps = res.lamps.flatMap((e) => e.lamps);
+    if (allLamps.length) {
+      const p = el('p', 'small');
+      for (const l of allLamps) p.append(el('span', `pill ${l.key === 'mil' || l.key === 'awl' ? 'warn' : 'bad'}`, l.name), ' ');
+      box.append(p);
+    }
+    if (!res.dtcs.length) {
+      box.append(el('p', 'small', '✓ Κανένας ενεργός κωδικός (DM1) — '
+        + `${res.raw} μηνύματα στον δίαυλο.`));
+    } else {
+      box.append(el('p', 'muted small', `${res.dtcs.length} ενεργοί κωδικοί:`));
+      const t = el('table');
+      const hr = el('tr');
+      hr.append(el('th', '', 'SPN'), el('th', '', 'Τι'), el('th', '', 'FMI — είδος'), el('th', '', 'Φορές'));
+      t.append(hr);
+      for (const d of res.dtcs) {
+        const tr = el('tr');
+        tr.append(
+          el('td', 'mono', String(d.spn)),
+          el('td', 'small', d.name || el('span', 'muted', '—').textContent),
+          el('td', 'small', `${d.fmi} — ${d.fmiText}`),
+          el('td', 'mono', String(d.oc)),
+        );
+        t.append(tr);
+      }
+      box.append(t);
+      box.append(el('p', 'muted small',
+        'Το SPN λέει ΠΟΥ (ποιος αισθητήρας/σύστημα) και το FMI ΤΙ είδους βλάβη. '
+        + 'Για τα SPN που δεν αναγνωρίζονται, δες το εγχειρίδιο σέρβις του οχήματος — '
+        + 'ο πλήρης κατάλογος είναι εν μέρει ιδιόκτητος και δεν τον εφευρίσκουμε.'));
+    }
+    if (res.sawBam) {
+      box.append(el('p', 'small warn-txt',
+        'Εντοπίστηκε μήνυμα πολλαπλών πλαισίων (BAM) — ίσως υπάρχουν κι άλλοι κωδικοί '
+        + 'που δεν συναρμολογούνται εδώ. Αύξησε τα δευτερόλεπτα ακρόασης και ξαναδοκίμασε.'));
+    }
+  } catch (e) {
+    log('!', e.message);
+    box.replaceChildren(el('p', 'err small', 'Αποτυχία: ' + e.message));
+  } finally {
+    $('btn-j1939').disabled = !S.elm;
   }
 }
 
@@ -1882,6 +1988,8 @@ function init() {
   }
   $('btn-scan').onclick = runScan;
   $('btn-did').onclick = runDidScan;
+  $('btn-j1939').onclick = () => runJ1939().catch((e) => log('!', e.message));
+  $('btn-m05').onclick = () => runMode05().catch((e) => log('!', e.message));
   $('btn-did-stop').onclick = () => { if (S.did) S.did.stop = true; };
   $('did-from').oninput = showDidNote;
   $('did-to').oninput = showDidNote;
