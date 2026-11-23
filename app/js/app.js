@@ -54,6 +54,7 @@ const S = {
   ecus: null, scan: null, // σάρωση μονάδων
   did: null, dids: null, // σαρωτής DID (UDS 22)
   proto: null, isCan: true, // πρωτόκολλο σύνδεσης
+  ref: null, // συνεδρία αναφοράς για σύγκριση στα γραφήματα
   m06: null, m06run: null, // on-board tests (Mode 06)
   vehicle: null, // ενεργό προφίλ γκαράζ
 };
@@ -352,6 +353,24 @@ function setTile(key, v) {
 }
 
 let drawPending = false;
+/**
+ * Ορίζει (ή καθαρίζει) τη συνεδρία αναφοράς που ζωγραφίζεται πάνω στα
+ * γραφήματα — «πριν / μετά το σέρβις». Ευθυγραμμίζεται στην αρχή της, όχι
+ * στην ώρα της ημέρας.
+ */
+function setRef(session) {
+  S.ref = session;
+  $('ref-bar').hidden = !session;
+  if (session) $('ref-label').textContent = sessionLabel(session);
+  renderHistory();
+  requestDraw();
+}
+
+function refOpts() {
+  if (!S.ref || S.ref.id === S.replay?.session?.id) return {};
+  return { ref: S.ref.rows, refLabel: new Date(S.ref.startedAt).toLocaleDateString('el-GR') };
+}
+
 function requestDraw() {
   if (drawPending) return;
   drawPending = true;
@@ -362,13 +381,15 @@ function requestDraw() {
       const rows = session.rows;
       const end = rows.length ? rows[rows.length - 1].t : 0;
       const t0 = rows.length ? rows[0].t : 0;
-      for (const c of S.charts.values()) c.draw(rows, { t0, t1: Math.max(end, t0 + 1), cursorT: t });
+      for (const c of S.charts.values()) {
+        c.draw(rows, { t0, t1: Math.max(end, t0 + 1), cursorT: t, ...refOpts() });
+      }
       const row = nearestRow(rows, t);
       if (row) for (const k of Object.keys(row.v)) setTile(k, row.v[k]);
       $('rp-time').textContent = `${(t - t0).toFixed(1)} / ${(end - t0).toFixed(0)} s`;
       $('rp-pos').value = end > t0 ? ((t - t0) / (end - t0)) * 100 : 0;
     } else if (S.cur) {
-      for (const c of S.charts.values()) c.draw(S.cur.rows, {});
+      for (const c of S.charts.values()) c.draw(S.cur.rows, refOpts());
     }
   });
 }
@@ -690,6 +711,10 @@ async function renderHistory() {
     const mk = (label, fn, cls = '') => { const b = el('button', cls, label); b.onclick = fn; btns.append(b); };
     mk('Αναπαραγωγή', async () => startReplay(await getSession(m.id)));
     mk('Αναφορά', async () => { const s = await getSession(m.id); s.report = buildReport(s); await saveSession(s); showReport(s); showTab('health'); });
+    mk(S.ref?.id === m.id ? '✓ Αναφορά' : 'Σύγκριση', async () => {
+      if (S.ref?.id === m.id) { setRef(null); return; }
+      setRef(await getSession(m.id));
+    }, 'ghost');
     mk('CSV', async () => downloadCsv(await getSession(m.id)), 'ghost');
     mk('Διαγραφή', async () => {
       if (!confirm('Διαγραφή αυτής της συνεδρίας από τη συσκευή; Δεν αναιρείται.')) return;
@@ -1789,6 +1814,7 @@ function init() {
   };
   renderProtoHint();
 
+  $('btn-ref-clear').onclick = () => setRef(null);
   $('btn-batt').onclick = runBattery;
   $('batt-chem').onchange = () => { if ($('batt-out').children.length) runBattery(); };
 

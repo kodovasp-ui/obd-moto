@@ -100,9 +100,18 @@ dialog::backdrop { background: rgb(0 0 0 / .5); }
 dialog label { display: flex; gap: 8px; align-items: center; }
 
 /* ---- φάση 3 */
-:root { --series-1: #2a78d6; --grid: #e6e9ed; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --series-1: #3987e5; --grid: #252b33; } }
-:root[data-theme="dark"] { --series-1: #3987e5; --grid: #252b33; }
+/* Δύο σειρές: μπλε και πορτοκαλί ξεχωρίζουν σε όλους τους τύπους αχρωματοψίας.
+   Η αναφορά είναι και διακεκομμένη, ώστε να μη στηρίζεται μόνο στο χρώμα. */
+:root { --series-1: #2a78d6; --series-2: #c2570a; --grid: #e6e9ed; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --series-1: #3987e5; --series-2: #f08a2e; --grid: #252b33; } }
+:root[data-theme="dark"] { --series-1: #3987e5; --series-2: #f08a2e; --grid: #252b33; }
+
+.chart-legend { display: inline-flex; gap: 10px; font-size: 12px; color: var(--muted); }
+.chart-legend .lg { display: inline-flex; align-items: center; gap: 4px; }
+.chart-legend .lg::before { content: ''; width: 14px; height: 0; border-top: 2px solid currentColor; }
+.chart-legend .now { color: var(--series-1); }
+.chart-legend .ref { color: var(--series-2); }
+.chart-legend .ref::before { border-top-style: dashed; }
 
 .mono { font-family: var(--mono); }
 .tile { cursor: pointer; text-align: left; }
