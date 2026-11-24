@@ -7,6 +7,8 @@
 // Στατικό HTML: μεταφράζεται ανά κόμβο κειμένου (translateDom), χωρίς αλλαγές
 // στο markup. Δυναμικά strings: τυλίγονται σε t('…').
 
+import { EN_DYN } from './i18n-dyn.js';
+
 const KEY = 'obd.lang';
 
 let lang = (() => {
@@ -28,7 +30,8 @@ export function setLang(l) {
 
 /** Μεταφράζει ένα δυναμικό string. t('Ελληνικό') → αγγλικό ή το ίδιο. */
 export function t(s, ...args) {
-  let out = lang === 'en' ? (EN[s] ?? s) : s;
+  let out = s;
+  if (lang === 'en') out = EN[s] ?? trText(s) ?? s;
   // Προαιρετικά placeholders {0}, {1}…
   args.forEach((a, i) => { out = out.replace(`{${i}}`, a); });
   return out;
@@ -41,6 +44,120 @@ const norm = (s) => s.replace(/\s+/g, ' ').trim();
 const BY_NORM = {};
 function indexDict() {
   for (const k of Object.keys(EN)) BY_NORM[norm(k)] = k;
+}
+
+
+// ------------------------------------------------- δυναμικό κείμενο
+// Σειρά: (1) ακριβής αντιστοίχιση, (2) πρότυπο με {} για τιμές, (3) λίστα με ", ",
+// (4) αντικατάσταση φράσεων μέσα στο κείμενο. Επιστρέφει null αν δεν άλλαξε τίποτα.
+const GR = /[Α-Ωα-ωά-ώ]{2,}/;
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+let EXACT = null, TPL = null, PHRASES = null;
+
+function indexDyn() {
+  EXACT = {}; TPL = []; PHRASES = [];
+  const all = { ...EN_DYN };
+  for (const [k, v] of Object.entries(all)) {
+    const nk = norm(k);
+    if (nk.includes('{}')) {
+      const lits = nk.split('{}');
+      const parts = lits.map(esc);
+      const lit = lits.join('');
+      TPL.push({
+        full: new RegExp('^' + parts.join('(.+?)') + '$'),
+        // Χαλαρή μορφή: ταιριάζει και μέσα σε μεγαλύτερη γραμμή (π.χ. «… · 54 PID · 4 συνδέσεις»).
+        loose: lit.length >= 8 && GR.test(lit) ? new RegExp(parts.join('([^ ]+)'), 'g') : null,
+        v,
+      });
+    } else {
+      EXACT[nk] = v;
+      if (nk.length >= 7) PHRASES.push([nk, v]);
+    }
+  }
+  PHRASES.sort((a, b) => b[0].length - a[0].length);
+  // Τα πιο ειδικά (μακρύτερα) πρότυπα πρώτα.
+  TPL.sort((a, b) => b.full.source.length - a.full.source.length);
+}
+
+function fill(v, m) {
+  let i = 1;
+  return v.replace(/\{\}/g, () => trText(m[i++] ?? '') ?? m[i - 1] ?? '');
+}
+
+export function trText(raw, depth = 0) {
+  if (lang !== 'en' || depth > 4) return null;
+  const text = norm(raw);
+  if (!text || !GR.test(text)) return null;
+  if (!EXACT) indexDyn();
+  if (EXACT[text] != null) return EXACT[text];
+  if (EN[text] != null) return EN[text];
+  for (const { full, v } of TPL) {
+    const m = text.match(full);
+    if (m) return fill(v, m);
+  }
+  if (text.endsWith('.') && depth < 2) {
+    const inner = trText(text.slice(0, -1), depth + 1);
+    if (inner != null) return inner + '.';
+  }
+  if (text.includes(', ')) {
+    const parts = text.split(', ').map((p) => trText(p, depth + 1) ?? p);
+    const out = parts.join(', ');
+    if (out !== text) return out;
+  }
+  let out = text, changed = false;
+  for (const { loose, v } of TPL) {
+    if (!loose) continue;
+    out = out.replace(loose, (...m) => { changed = true; return fill(v, m); });
+  }
+  for (const [k, v] of PHRASES) {
+    if (out.includes(k)) { out = out.split(k).join(v); changed = true; }
+  }
+  if (!changed) return null;
+  // Αν μένει σχεδόν όλο το κείμενο ελληνικό (π.χ. βάση γνώσης με μία γνωστή λέξη),
+  // το αφήνουμε ως έχει αντί να βγάλει μισομεταφρασμένο μείγμα.
+  const greek = (x) => (x.match(/[Α-Ωα-ωά-ώ]/g) || []).length;
+  return greek(out) <= greek(text) * 0.15 ? out : null;
+}
+
+function translateNode(n) {
+  const raw = n.nodeValue;
+  if (!raw || !GR.test(raw)) return;
+  const out = trText(raw);
+  if (out != null && out !== norm(raw)) {
+    const lead = raw.match(/^\s*/)[0];
+    const tail = raw.match(/\s*$/)[0];
+    n.nodeValue = lead + out + tail;
+  }
+}
+
+function walk(root) {
+  if (root.nodeType === 3) return translateNode(root);
+  if (root.nodeType !== 1 && root.nodeType !== 11) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (w.nextNode()) nodes.push(w.currentNode);
+  nodes.forEach(translateNode);
+  if (root.querySelectorAll) {
+    for (const attr of ['placeholder', 'title', 'aria-label']) {
+      for (const el of root.querySelectorAll(`[${attr}]`)) {
+        const o = trText(el.getAttribute(attr));
+        if (o != null) el.setAttribute(attr, o);
+      }
+    }
+  }
+}
+
+let observer = null;
+/** Παρακολουθεί το DOM και μεταφράζει ό,τι εισάγεται δυναμικά (πίνακες, verdicts). */
+export function observeDom(root = document.body) {
+  if (lang !== 'en' || observer) return;
+  observer = new MutationObserver((muts) => {
+    for (const m of muts) {
+      if (m.type === 'characterData') translateNode(m.target);
+      else m.addedNodes.forEach((n) => walk(n));
+    }
+  });
+  observer.observe(root, { childList: true, subtree: true, characterData: true });
 }
 
 /**
@@ -72,6 +189,7 @@ export function translateDom(root = document.body) {
       if (key) el.setAttribute(attr, EN[key]);
     }
   }
+  walk(root); // δυναμικό λεξικό (options, πίνακες που υπάρχουν ήδη)
   document.documentElement.lang = 'en';
 }
 
