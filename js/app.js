@@ -2148,7 +2148,7 @@ function init() {
   }
   showTab(store.get('obd.tab', 'live'));
   setupPwa();
-  TR.translateDom(); // μεταφράζει το στατικό UI αν η γλώσσα είναι αγγλικά
+  TR.translateDom(); TR.observeDom(); // μεταφράζει το στατικό UI αν η γλώσσα είναι αγγλικά
 }
 
 init();
