@@ -7,7 +7,16 @@ import { lookup } from './dtc-kb.js';
 
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.4.0/+esm';
 export const MODEL = 'claude-opus-5-5';
+import { getLang } from './i18n.js';
+
 const KEY_STORE = 'obd.anthropicKey';
+
+// Οι οδηγίες είναι ελληνικά· όταν το UI είναι αγγλικό ζητάμε απάντηση στα αγγλικά.
+const langNote = () => (getLang() === 'en'
+  ? `
+
+IMPORTANT: The user interface is set to English. Write your entire reply in English, even though these instructions are in Greek.`
+  : '');
 
 const SYSTEM = `Είσαι έμπειρος μηχανικός μοτοσυκλετών και βοηθάς σε διάγνωση μέσω OBD-II.
 Όχημα: CFMOTO 450MT (2025/2026), βενζίνη, ψεκασμός, narrowband αισθητήρες λάμδα, CAN 11bit/500k.
@@ -147,7 +156,7 @@ export async function diagnose({ apiKey, context, onText, signal }) {
       fallbacks: 'default',
       thinking: { type: 'adaptive' },
       output_config: { effort: 'high' },
-      system: SYSTEM,
+      system: SYSTEM + langNote(),
       messages: [{ role: 'user', content: context }],
     }, { signal });
     stream.on('text', (t) => onText(t));
@@ -214,7 +223,7 @@ export async function chat({ apiKey, system, messages, onText, signal }) {
       fallbacks: 'default',
       thinking: { type: 'adaptive' },
       output_config: { effort: 'medium' },
-      system,
+      system: system + langNote(),
       messages,
     }, { signal });
     stream.on('text', (t) => onText(t));
