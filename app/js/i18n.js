@@ -8,6 +8,8 @@
 // στο markup. Δυναμικά strings: τυλίγονται σε t('…').
 
 import { EN_DYN } from './i18n-dyn.js';
+import { EN_KB } from './i18n-kb.js';
+import { EN_KB2 } from './i18n-kb2.js';
 
 const KEY = 'obd.lang';
 
@@ -56,7 +58,7 @@ let EXACT = null, TPL = null, PHRASES = null;
 
 function indexDyn() {
   EXACT = {}; TPL = []; PHRASES = [];
-  const all = { ...EN_DYN };
+  const all = { ...EN_KB2, ...EN_KB, ...EN_DYN };
   for (const [k, v] of Object.entries(all)) {
     const nk = norm(k);
     if (nk.includes('{}')) {
@@ -91,9 +93,21 @@ export function trText(raw, depth = 0) {
   if (!EXACT) indexDyn();
   if (EXACT[text] != null) return EXACT[text];
   if (EN[text] != null) return EN[text];
+  // Πρότυπο: δεκτό αμέσως μόνο αν βγει πλήρως αγγλικό· αλλιώς το κρατάμε ως εφεδρικό
+  // και δοκιμάζουμε τις υπόλοιπες στρατηγικές (π.χ. «εξάρτημα — βλάβη»).
+  let partial = null;
   for (const { full, v } of TPL) {
     const m = text.match(full);
-    if (m) return fill(v, m);
+    if (m) {
+      const r = fill(v, m);
+      if (!GR.test(r)) return r;
+      partial = partial ?? r;
+    }
+  }
+  // «εξάρτημα — βλάβη»: μεταφράζεται ανά μέρος, αν μεταφράζονται όλα.
+  if (text.includes(' — ') && depth < 3) {
+    const parts = text.split(' — ').map((p) => trText(p, depth + 1) ?? (GR.test(p) ? null : p));
+    if (parts.every((p) => p != null)) return parts.join(' — ');
   }
   if (text.endsWith('.') && depth < 2) {
     const inner = trText(text.slice(0, -1), depth + 1);
@@ -112,11 +126,11 @@ export function trText(raw, depth = 0) {
   for (const [k, v] of PHRASES) {
     if (out.includes(k)) { out = out.split(k).join(v); changed = true; }
   }
-  if (!changed) return null;
+  if (!changed) return partial;
   // Αν μένει σχεδόν όλο το κείμενο ελληνικό (π.χ. βάση γνώσης με μία γνωστή λέξη),
   // το αφήνουμε ως έχει αντί να βγάλει μισομεταφρασμένο μείγμα.
   const greek = (x) => (x.match(/[Α-Ωα-ωά-ώ]/g) || []).length;
-  return greek(out) <= greek(text) * 0.15 ? out : null;
+  return greek(out) <= greek(text) * 0.15 ? out : partial;
 }
 
 function translateNode(n) {
